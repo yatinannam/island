@@ -49,7 +49,7 @@ Run `island-setup-<version>.exe`. The NSIS one-click installer installs per-user
 The installer and `island.exe` are **not code-signed**. SmartScreen may show *Windows protected your PC* on first run: choose *More info > Run anyway*. Verify the download against the SHA-256 in the release notes first:
 
 ```powershell
-Get-FileHash .\island-setup-0.1.0.exe -Algorithm SHA256
+Get-FileHash .\island-setup-0.1.1.exe -Algorithm SHA256
 ```
 
 User data lives in `%APPDATA%\island` (`settings.json`, `shelf.json`, `shelf-files\`). Uninstalling leaves it in place; delete the folder to remove it.
