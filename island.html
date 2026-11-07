@@ -950,20 +950,31 @@
 
   // One page per scroll gesture. Sideways scrolling over a long shelf
   // (trackpad, or Shift+wheel) scrolls the files instead.
-  let wheelAcc = 0, wheelCool = 0, wheelIdle = 0;
+  // A touchpad keeps sending wheel events (momentum) for about a second after
+  // the fingers lift. They are ignored only in the direction of the last page
+  // change, and scrolling past the last page neither builds up nor re-arms the
+  // cooldown; before, that momentum held off a swipe back for up to ~1s.
+  let wheelAcc = 0, wheelCool = 0, wheelIdle = 0, wheelDir = 0;
   addEventListener('wheel', (e) => {
     if (!body.classList.contains('open')) return;
     const sideways = Math.abs(e.deltaX) > Math.abs(e.deltaY);
     const tiles = $('tiles');
     if (sideways && page === 1 && e.target.closest('.tiles') && tiles.scrollWidth > tiles.clientWidth) return;
     e.preventDefault();
-    if (performance.now() < wheelCool) return;
-    wheelAcc += sideways ? e.deltaX : e.deltaY;
+    const d = sideways ? e.deltaX : e.deltaY;
+    const dir = Math.sign(d);
+    if (!dir) return;
+    if (dir === wheelDir && performance.now() < wheelCool) return; // momentum of the last swipe
+    const next = Math.max(0, Math.min(1, page + dir));
+    if (next === page) { wheelAcc = 0; return; }   // no page that way
+    if (Math.sign(wheelAcc) !== dir) wheelAcc = 0;  // direction changed: a new gesture
+    wheelAcc += d;
     clearTimeout(wheelIdle);
     wheelIdle = setTimeout(() => { wheelAcc = 0; }, 160);
     if (Math.abs(wheelAcc) > 40) {
-      setPage(page + Math.sign(wheelAcc));
+      setPage(next);
       wheelAcc = 0;
+      wheelDir = dir;
       wheelCool = performance.now() + 450;
     }
   }, { passive: false });
