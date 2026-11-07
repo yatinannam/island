@@ -1,12 +1,18 @@
 // island: hover-reveal top island for Windows.
 // Run:     bun install && bun run start
 // Flags:   --open   start with the island pinned open (for testing)
+//          --solid  start with glass off
+// Env:     ISLAND_DEBUG=1 log open/close; ISLAND_SHOT=file.png save a capture of the page once open
 // Hotkeys: Ctrl+Alt+I pin/unpin the island, Ctrl+Alt+Q quit.
 
 const {
   app, BrowserWindow, screen, globalShortcut, ipcMain, Tray, Menu, nativeImage,
+  desktopCapturer, nativeTheme,
 } = require('electron');
+const { execFile } = require('child_process');
+const fs = require('fs');
 const path = require('path');
+const { MediaHelper } = require('./media/helper');
 
 // Expanded island shape, in DIP. Must match --w / --h in island.html.
 const SHAPE_W = 380;
@@ -35,6 +41,14 @@ let leaveSince = 0;
 let hotSince = 0;
 let hideTimer = null;
 let current = null; // display the island is on
+
+// Glass = blurred capture of the screen behind the island. It needs the
+// window excluded from capture, which also hides it from screenshots.
+let glassWanted = !process.argv.includes('--solid');
+let theme = { dark: true, transparency: true };
+const sourceIds = new Map(); // display id -> desktopCapturer source id
+
+const media = new MediaHelper();
 
 const DEBUG = process.env.ISLAND_DEBUG === '1';
 const log = (...a) => { if (DEBUG) console.log('[island]', ...a); };
@@ -67,6 +81,64 @@ function shapeRect(d) {
   };
 }
 
+// ---- theme and glass ------------------------------------------------------
+
+// Follow the taskbar's theme and the "Transparency effects" switch.
+function readTheme() {
+  return new Promise((resolve) => {
+    execFile('reg', ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize'],
+      { windowsHide: true }, (_err, out) => {
+        const dword = (name, fallback) => {
+          const m = new RegExp(`${name}\\s+REG_DWORD\\s+0x([0-9a-f]+)`, 'i').exec(out || '');
+          return m ? parseInt(m[1], 16) : fallback;
+        };
+        resolve({
+          dark: dword('SystemUsesLightTheme', 0) === 0,
+          transparency: dword('EnableTransparency', 1) === 1,
+        });
+      });
+  });
+}
+
+function config() {
+  return { glass: glassWanted && theme.transparency, dark: theme.dark };
+}
+
+function applyConfig() {
+  if (!win || win.isDestroyed()) return;
+  win.setContentProtection(config().glass);
+  send('config', config());
+  updateTrayMenu();
+}
+
+async function refreshTheme() {
+  const next = await readTheme();
+  if (next.dark !== theme.dark || next.transparency !== theme.transparency) {
+    theme = next;
+    applyConfig();
+  }
+}
+
+async function captureSource(d) {
+  if (sourceIds.has(d.id)) return sourceIds.get(d.id);
+  const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
+  sourceIds.clear();
+  for (const s of sources) sourceIds.set(Number(s.display_id), s.id);
+  return sourceIds.get(d.id) || (sources[0] && sources[0].id) || null;
+}
+
+async function sendCapture(d) {
+  if (!config().glass) return;
+  try {
+    const sourceId = await captureSource(d);
+    if (sourceId) send('capture', { sourceId, display: d.bounds, window: windowBounds(d) });
+  } catch (e) {
+    log('capture source failed', e.message);
+  }
+}
+
+// ---- window ----------------------------------------------------------------
+
 function createWindow() {
   win = new BrowserWindow({
     ...windowBounds(screen.getPrimaryDisplay()),
@@ -89,6 +161,7 @@ function createWindow() {
     },
   });
   win.setAlwaysOnTop(true, 'screen-saver');
+  win.setContentProtection(config().glass);
   // Transparent parts never block clicks. The renderer turns mouse input back
   // on while the cursor is over the shape itself.
   win.setIgnoreMouseEvents(true, { forward: true });
@@ -114,8 +187,17 @@ function openIsland(d) {
   current = d;
   win.setBounds(windowBounds(d));
   win.setAlwaysOnTop(true, 'screen-saver'); // re-assert: other topmost windows may sit above us
+  sendCapture(d);
   win.showInactive();
   send('island-state', 'open');
+  refreshTheme();
+  if (process.env.ISLAND_SHOT) {
+    setTimeout(async () => {
+      const img = await win.webContents.capturePage();
+      fs.writeFileSync(process.env.ISLAND_SHOT, img.toPNG());
+      log('saved', process.env.ISLAND_SHOT);
+    }, 1800);
+  }
 }
 
 function closeIsland() {
@@ -176,6 +258,8 @@ function togglePinned() {
   }
 }
 
+// ---- tray ------------------------------------------------------------------
+
 // 16x16 white rounded pill for the tray, drawn as raw BGRA pixels.
 function trayIcon() {
   const s = 16;
@@ -195,14 +279,26 @@ function trayIcon() {
   return nativeImage.createFromBitmap(buf, { width: s, height: s });
 }
 
-function createTray() {
-  tray = new Tray(trayIcon());
-  tray.setToolTip('island');
+function updateTrayMenu() {
+  if (!tray) return;
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Pin island open (Ctrl+Alt+I)', click: togglePinned },
+    {
+      label: 'Glass background (hidden from screenshots)',
+      type: 'checkbox',
+      checked: glassWanted,
+      enabled: theme.transparency,
+      click: (item) => { glassWanted = item.checked; applyConfig(); },
+    },
     { type: 'separator' },
     { label: 'Quit (Ctrl+Alt+Q)', click: () => app.quit() },
   ]));
+}
+
+function createTray() {
+  tray = new Tray(trayIcon());
+  tray.setToolTip('island');
+  updateTrayMenu();
 }
 
 function registerShortcut(accel, fn) {
@@ -211,22 +307,44 @@ function registerShortcut(accel, fn) {
   }
 }
 
+// ---- IPC -------------------------------------------------------------------
+
 ipcMain.on('hover', (_e, over) => {
   if (!win || win.isDestroyed()) return;
   if (over && isOpen) win.setIgnoreMouseEvents(false);
   else win.setIgnoreMouseEvents(true, { forward: true });
 });
 
-app.whenReady().then(() => {
+ipcMain.on('media-cmd', (_e, cmd) => media.command(String(cmd)));
+
+ipcMain.handle('snapshot', () => ({ config: config(), media: media.state, art: media.art }));
+
+media.on('state', (s) => send('media-state', s));
+media.on('art', (a) => send('media-art', a));
+media.on('error', (e) => log('media:', e.message));
+
+// ---- app -------------------------------------------------------------------
+
+app.whenReady().then(async () => {
+  theme = await readTheme();
   createWindow();
   createTray();
+  media.start();
   setInterval(tick, TICK_MS);
   registerShortcut('Control+Alt+I', togglePinned);
   registerShortcut('Control+Alt+Q', () => app.quit());
-  screen.on('display-removed', () => {
+  nativeTheme.on('updated', refreshTheme);
+  const displaysChanged = () => {
+    sourceIds.clear();
     if (isOpen) closeIsland();
-  });
+  };
+  screen.on('display-removed', displaysChanged);
+  screen.on('display-added', displaysChanged);
+  screen.on('display-metrics-changed', () => sourceIds.clear());
 });
 
 app.on('window-all-closed', () => app.quit());
-app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  media.stop();
+});

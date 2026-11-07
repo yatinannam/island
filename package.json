@@ -1,13 +1,13 @@
 {
   "name": "island",
   "version": "0.0.2",
-  "description": "Hover-reveal top island for Windows",
   "main": "main.js",
+  "devDependencies": {
+    "electron": "^45.2.3"
+  },
+  "description": "Hover-reveal top island for Windows",
   "scripts": {
     "start": "electron .",
     "dev": "electron . --open"
-  },
-  "devDependencies": {
-    "electron": "^45.2.3"
   }
 }

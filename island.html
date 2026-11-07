@@ -10,17 +10,30 @@
     /* Collapsed size: a sliver tucked into the top edge */
     --cw: 150px;
     --ch: 0px;
-    --r: 32px;    /* bottom corner radius when open */
-    --ear: 14px;  /* concave curve joining the shape to the screen edge */
-    --bg: #000;
-    --label: #f5f5f7;
-    --label-2: rgba(235, 235, 245, 0.6);
-    --label-3: rgba(235, 235, 245, 0.35);
+    --r: 32px;    /* bottom corner radius when open; must match R in the script */
+    --accent: #a9b8ff;
     /* Overwritten by the spring generator below */
     --ease-open: cubic-bezier(0.34, 1.4, 0.64, 1);
     --dur-open: 520ms;
     --ease-close: cubic-bezier(0.4, 0, 0.2, 1);
     --dur-close: 340ms;
+
+    --label: #f5f5f7;
+    --label-2: rgba(235, 235, 245, 0.62);
+    --label-3: rgba(235, 235, 245, 0.42);
+    --track: rgba(255, 255, 255, 0.18);
+    --fill: rgba(255, 255, 255, 0.92);
+    --hover: rgba(255, 255, 255, 0.1);
+    --press: rgba(255, 255, 255, 0.16);
+  }
+  body.light {
+    --label: #1c1c1e;
+    --label-2: rgba(60, 60, 67, 0.68);
+    --label-3: rgba(60, 60, 67, 0.48);
+    --track: rgba(0, 0, 0, 0.12);
+    --fill: rgba(0, 0, 0, 0.78);
+    --hover: rgba(0, 0, 0, 0.06);
+    --press: rgba(0, 0, 0, 0.1);
   }
   html, body {
     margin: 0; height: 100%; overflow: hidden;
@@ -30,6 +43,10 @@
     user-select: none;
     cursor: default;
   }
+
+  /* The notch silhouette, shadow and glass are painted on this canvas,
+     following the size of .island every frame. */
+  #glass { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 
   /* The island grows out of the top edge. Width/height carry the spring;
      centered with translateX so it grows evenly from the middle. */
@@ -47,31 +64,12 @@
     transition-timing-function: var(--ease-open);
   }
 
+  /* Clips the content to the shape and catches the mouse. Painting is on the canvas. */
   .shape {
     position: absolute; inset: 0;
-    background: var(--bg);
     border-radius: 0 0 var(--r) var(--r);
     overflow: hidden;
-    box-shadow: 0 0 0 rgba(0, 0, 0, 0);
-    transition: box-shadow 200ms ease;
   }
-  .open .shape { box-shadow: 0 14px 34px rgba(0, 0, 0, 0.32), 0 3px 10px rgba(0, 0, 0, 0.18); }
-
-  /* Ears: concave fillets so the island looks attached to the screen edge */
-  .island::before, .island::after {
-    content: ""; position: absolute; top: 0;
-    width: var(--ear); height: var(--ear);
-    opacity: 0; transition: opacity 120ms ease;
-  }
-  .island::before {
-    left: calc(-1 * var(--ear) + 0.5px);
-    background: radial-gradient(circle at 0 100%, transparent calc(var(--ear) - 0.75px), var(--bg) var(--ear));
-  }
-  .island::after {
-    right: calc(-1 * var(--ear) + 0.5px);
-    background: radial-gradient(circle at 100% 100%, transparent calc(var(--ear) - 0.75px), var(--bg) var(--ear));
-  }
-  .open .island::before, .open .island::after { opacity: 1; transition-duration: 60ms; }
 
   /* Content keeps its final width so text never reflows mid-animation */
   .content {
@@ -92,10 +90,21 @@
 
   .row { display: flex; align-items: center; gap: 12px; height: 48px; }
   .art {
-    width: 48px; height: 48px; flex: none; border-radius: 11px;
-    background: linear-gradient(140deg, #6e8bff 0%, #a76bff 55%, #ff7aa8 100%);
-    box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.18);
+    position: relative;
+    width: 48px; height: 48px; flex: none; border-radius: 11px; overflow: hidden;
+    background: linear-gradient(140deg, rgba(128, 128, 140, 0.45), rgba(90, 90, 100, 0.35));
+    box-shadow: 0 4px 14px -4px var(--accent-glow, transparent);
+    transition: box-shadow 400ms ease;
   }
+  .art img {
+    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+    opacity: 0; transition: opacity 250ms ease;
+  }
+  .art.has img { opacity: 1; }
+  .art::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.16); }
+  .art .note { position: absolute; inset: 0; margin: auto; width: 22px; height: 22px; fill: var(--label-3); transition: opacity 200ms; }
+  .art.has .note { opacity: 0; }
+
   .meta { min-width: 0; flex: 1; }
   .title {
     font-size: 14px; font-weight: 600; letter-spacing: -0.1px;
@@ -106,13 +115,13 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
 
-  /* Equalizer bars, tinted like the artwork; still when paused */
-  .eq { display: flex; align-items: center; gap: 2.5px; height: 18px; flex: none; margin-right: 2px; }
+  /* Equalizer bars, tinted from the artwork; still when paused */
+  .eq { display: flex; align-items: center; gap: 2.5px; height: 18px; flex: none; margin-right: 2px; transition: opacity 200ms; }
   .eq i {
     width: 3px; height: 100%; border-radius: 2px;
-    background: linear-gradient(#b9a4ff, #8aa2ff);
-    transform: scaleY(0.25); transform-origin: 50% 50%;
-    transition: transform 200ms ease;
+    background: var(--accent);
+    transform: scaleY(0.22); transform-origin: 50% 50%;
+    transition: transform 250ms ease, background 400ms ease;
   }
   .open.playing .eq i { animation: eq 0.9s ease-in-out infinite alternate; }
   .eq i:nth-child(2) { animation-delay: -0.35s !important; }
@@ -124,25 +133,35 @@
     70% { transform: scaleY(0.45); }
     100% { transform: scaleY(1); }
   }
+  .idle .eq { opacity: 0; }
 
-  .progress { display: flex; align-items: center; gap: 10px; margin-top: 12px; height: 14px; }
+  .progress { display: flex; align-items: center; gap: 10px; margin-top: 12px; height: 14px; transition: opacity 200ms; }
+  .idle .progress { opacity: 0.35; }
   .t {
     font-size: 11px; color: var(--label-3); font-variant-numeric: tabular-nums;
-    width: 32px; flex: none;
+    width: 34px; flex: none;
   }
   .t.end { text-align: right; }
-  .bar { flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.16); overflow: hidden; }
-  .bar i { display: block; height: 100%; width: 33%; border-radius: 2px; background: rgba(255, 255, 255, 0.85); }
+  .bar {
+    flex: 1; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden;
+    transition: height 120ms ease;
+  }
+  .seekable .bar:hover { height: 6px; }
+  .bar i {
+    display: block; height: 100%; width: 100%; border-radius: 2px; background: var(--fill);
+    transform-origin: 0 50%; transform: scaleX(0);
+  }
 
   .controls { display: flex; justify-content: center; align-items: center; gap: 22px; margin-top: 8px; height: 34px; }
   button {
     all: unset; display: grid; place-items: center;
     width: 34px; height: 34px; border-radius: 50%;
     color: var(--label);
-    transition: background 120ms ease, transform 120ms ease;
+    transition: background 120ms ease, transform 120ms ease, opacity 150ms ease;
   }
-  button:hover { background: rgba(255, 255, 255, 0.1); }
-  button:active { transform: scale(0.88); background: rgba(255, 255, 255, 0.16); }
+  button:hover { background: var(--hover); }
+  button:active { transform: scale(0.88); background: var(--press); }
+  button:disabled { opacity: 0.3; pointer-events: none; }
   button svg { fill: currentColor; stroke: currentColor; stroke-linejoin: round; }
   #prev svg, #next svg { width: 20px; height: 20px; stroke-width: 1.6; }
   #play svg { width: 24px; height: 24px; stroke-width: 2; }
@@ -151,32 +170,36 @@
   .playing .icon-pause { display: inline; }
 </style>
 </head>
-<body class="playing">
-  <div class="island">
+<body class="idle">
+  <canvas id="glass"></canvas>
+  <div class="island" id="island">
     <div class="shape" id="shape">
       <div class="content">
         <div class="row">
-          <div class="art"></div>
+          <div class="art" id="art">
+            <svg class="note" viewBox="0 0 24 24"><path d="M9 17.5a3 3 0 1 1-2-2.83V5.6a1 1 0 0 1 .76-.97l10-2.5A1 1 0 0 1 19 3.1V15.5a3 3 0 1 1-2-2.83V7.28L9 9.28z"/></svg>
+            <img id="artImg" alt="">
+          </div>
           <div class="meta">
-            <div class="title">Demo Track</div>
-            <div class="artist">island preview</div>
+            <div class="title" id="title">Nothing playing</div>
+            <div class="artist" id="artist">Play something in Spotify or your browser</div>
           </div>
           <div class="eq"><i></i><i></i><i></i><i></i></div>
         </div>
         <div class="progress">
-          <span class="t">1:12</span>
-          <div class="bar"><i></i></div>
-          <span class="t end">-2:31</span>
+          <span class="t" id="elapsed">0:00</span>
+          <div class="bar" id="bar"><i id="fill"></i></div>
+          <span class="t end" id="remaining">-0:00</span>
         </div>
         <div class="controls">
-          <button id="prev" title="Previous">
+          <button id="prev" title="Previous" disabled>
             <svg viewBox="0 0 24 24"><path d="M21 6.5 12.5 12 21 17.5Z M12 6.5 3.5 12 12 17.5Z"/></svg>
           </button>
-          <button id="play" title="Play/Pause">
+          <button id="play" title="Play/Pause" disabled>
             <svg class="icon-play" viewBox="0 0 24 24"><path d="M7.5 5.5 19 12 7.5 18.5Z"/></svg>
             <svg class="icon-pause" viewBox="0 0 24 24" stroke="none"><rect x="6" y="5" width="4.2" height="14" rx="1.3"/><rect x="13.8" y="5" width="4.2" height="14" rx="1.3"/></svg>
           </button>
-          <button id="next" title="Next">
+          <button id="next" title="Next" disabled>
             <svg viewBox="0 0 24 24"><path d="M3 6.5 11.5 12 3 17.5Z M12 6.5 20.5 12 12 17.5Z"/></svg>
           </button>
         </div>
@@ -184,6 +207,7 @@
     </div>
   </div>
 <script>
+  // ===== Spring ==============================================================
   // Damped spring sampled into a CSS linear() easing, so CSS transitions
   // move like a real spring (overshoot and settle) instead of a bezier.
   function spring({ stiffness, damping, mass = 1 }) {
@@ -205,35 +229,445 @@
     return { easing: `linear(${pts.join(', ')})`, ms: Math.round(t * 1000) };
   }
 
-  const root = document.documentElement.style;
+  const rootStyle = document.documentElement.style;
   if (CSS.supports('transition-timing-function', 'linear(0, 1)')) {
     const open = spring({ stiffness: 240, damping: 21 });   // ~6% overshoot
     const close = spring({ stiffness: 320, damping: 38 });  // no overshoot
-    root.setProperty('--ease-open', open.easing);
-    root.setProperty('--dur-open', open.ms + 'ms');
-    root.setProperty('--ease-close', close.easing);
-    root.setProperty('--dur-close', close.ms + 'ms');
+    rootStyle.setProperty('--ease-open', open.easing);
+    rootStyle.setProperty('--dur-open', open.ms + 'ms');
+    rootStyle.setProperty('--ease-close', close.easing);
+    rootStyle.setProperty('--dur-close', close.ms + 'ms');
   }
 
+  const $ = (id) => document.getElementById(id);
   const body = document.body;
-  const shape = document.getElementById('shape');
+  const islandEl = $('island');
+  const shape = $('shape');
+  let cfg = { glass: true, dark: true };
+
+  // ===== Glass ===============================================================
+  // Windows can't blur behind a rounded transparent window, so the island
+  // captures the screen (its own window is excluded from capture), blurs the
+  // part behind it, and paints it inside the notch silhouette. The material
+  // follows Windows acrylic: blur, luminosity layer, tint, a little noise.
+
+  const R = 32;            // bottom corner radius, matches --r
+  const EAR = 14;          // concave curve joining the island to the screen edge
+  const SHAPE_H = 140;     // matches --h
+  const BLUR = 22;         // blur radius in CSS px
+  const MATERIAL = {
+    dark: {
+      lum: 'rgba(30, 30, 32, 0.86)', tint: 'rgba(24, 24, 26, 0.28)', noise: 0.022,
+      edge: 'rgba(255, 255, 255, 0.10)', waiting: 'rgba(32, 32, 34, 0.96)', solid: '#000',
+    },
+    light: {
+      lum: 'rgba(246, 246, 248, 0.8)', tint: 'rgba(252, 252, 252, 0.35)', noise: 0.018,
+      edge: 'rgba(0, 0, 0, 0.08)', waiting: 'rgba(242, 242, 244, 0.97)', solid: '#f2f2f4',
+    },
+  };
+
+  const canvas = $('glass');
+  const ctx = canvas.getContext('2d');
+  const srcCanvas = document.createElement('canvas');
+  const srcCtx = srcCanvas.getContext('2d');
+  const blurCanvas = document.createElement('canvas');
+  const blurCtx = blurCanvas.getContext('2d');
+  let noisePattern = null;
+  let dpr = 1;
+
+  let capInfo = null;     // { sourceId, display, window } from main
+  let cap = null;         // { sourceId, stream, video }
+  let blurMap = null;     // where the window region sits inside blurCanvas
+  let glassReadyAt = 0;
+  let stopTimer = null;
+
+  let running = false, dirty = true, lastW = -1, lastH = -1;
+
+  function sizeCanvas() {
+    dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(innerWidth * dpr);
+    canvas.height = Math.round(innerHeight * dpr);
+    dirty = true;
+  }
+
+  function makeNoise() {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const x = c.getContext('2d');
+    const img = x.createImageData(128, 128);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const v = Math.random() * 255;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+      img.data[i + 3] = 255;
+    }
+    x.putImageData(img, 0, 0);
+    return ctx.createPattern(c, 'repeat');
+  }
+
+  // Island body plus concave "ears" at the top corners, in CSS px.
+  function notchPath(cx, w, h) {
+    const p = new Path2D();
+    const e = Math.min(EAR, h * 0.4);
+    const r = Math.max(0, Math.min(R, h - e, w / 2));
+    const x0 = cx - w / 2, x1 = cx + w / 2;
+    p.moveTo(x0 - e, 0);
+    p.lineTo(x1 + e, 0);
+    if (e > 0) p.arc(x1 + e, e, e, -Math.PI / 2, -Math.PI, true);
+    p.lineTo(x1, h - r);
+    if (r > 0) p.arc(x1 - r, h - r, r, 0, Math.PI / 2);
+    p.lineTo(x0 + r, h);
+    if (r > 0) p.arc(x0 + r, h - r, r, Math.PI / 2, Math.PI);
+    p.lineTo(x0, e);
+    if (e > 0) p.arc(x0 - e, e, e, 0, -Math.PI / 2, true);
+    p.closePath();
+    return p;
+  }
+
+  function draw(w, h) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, innerWidth, innerHeight);
+    if (w < 1 || h < 0.5) return;
+    const m = cfg.dark ? MATERIAL.dark : MATERIAL.light;
+    const path = notchPath(innerWidth / 2, w, h);
+    const openness = Math.min(1, h / SHAPE_H);
+
+    // Shadow, cast by an opaque fill that the material then covers.
+    ctx.save();
+    ctx.shadowColor = `rgba(0, 0, 0, ${(cfg.dark ? 0.38 : 0.2) * openness})`;
+    ctx.shadowBlur = 28;
+    ctx.shadowOffsetY = 8;
+    ctx.fillStyle = cfg.glass ? m.waiting : m.solid;
+    ctx.fill(path);
+    ctx.restore();
+
+    ctx.save();
+    ctx.clip(path);
+    if (cfg.glass && cap && blurMap) {
+      const fade = Math.min(1, (performance.now() - glassReadyAt) / 180);
+      ctx.globalAlpha = fade;
+      ctx.drawImage(blurCanvas, blurMap.x, blurMap.y, blurMap.w, blurMap.h, 0, 0, innerWidth, innerHeight);
+      ctx.globalCompositeOperation = 'luminosity';
+      ctx.fillStyle = m.lum;
+      ctx.fillRect(0, 0, innerWidth, innerHeight);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = m.tint;
+      ctx.fillRect(0, 0, innerWidth, innerHeight);
+      if (!noisePattern) noisePattern = makeNoise();
+      ctx.globalAlpha = m.noise * fade;
+      ctx.fillStyle = noisePattern;
+      ctx.fillRect(0, 0, innerWidth, innerHeight);
+      ctx.globalAlpha = 1;
+      if (fade < 1) dirty = true;
+    }
+    // Hairline edge, skipping the top edge that touches the screen border.
+    ctx.beginPath();
+    ctx.rect(0, 1.5, innerWidth, innerHeight);
+    ctx.clip();
+    ctx.strokeStyle = m.edge;
+    ctx.lineWidth = 2;
+    ctx.stroke(path);
+    ctx.restore();
+  }
+
+  // Redraws while the shape is moving or something changed, then sleeps
+  // until kick() wakes it (state change, new captured frame, config).
+  let still = 0;
+  function frame() {
+    const r = islandEl.getBoundingClientRect();
+    if (dirty || r.width !== lastW || r.height !== lastH) {
+      dirty = false;
+      still = 0;
+      lastW = r.width; lastH = r.height;
+      draw(r.width, r.height);
+    } else {
+      still++;
+    }
+    const visible = body.classList.contains('open') || r.height >= 0.5;
+    if (visible && still < 6) {
+      requestAnimationFrame(frame);
+    } else if (visible) {
+      running = false;
+    } else {
+      running = false;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  }
+
+  function kick() {
+    dirty = true;
+    if (!running) { running = true; requestAnimationFrame(frame); }
+  }
+
+  // Crop the window's region (plus a margin so blur edges stay solid) out of
+  // the low-res capture and blur it once per captured frame.
+  function buildBlur() {
+    const v = cap && cap.video;
+    if (!v || !v.videoWidth || !capInfo) return;
+    const d = capInfo.display, wb = capInfo.window;
+    const sx = v.videoWidth / d.width, sy = v.videoHeight / d.height;
+    const rx = (wb.x - d.x) * sx, ry = (wb.y - d.y) * sy;
+    const rw = wb.width * sx, rh = wb.height * sy;
+    const blurPx = BLUR * sx;
+    const pad = Math.ceil(blurPx * 2.5);
+    const w = Math.ceil(rw + pad * 2), h = Math.ceil(rh + pad * 2);
+    if (srcCanvas.width !== w || srcCanvas.height !== h) {
+      srcCanvas.width = blurCanvas.width = w;
+      srcCanvas.height = blurCanvas.height = h;
+    }
+    srcCtx.clearRect(0, 0, w, h);
+    srcCtx.drawImage(v, rx - pad, ry - pad, w, h, 0, 0, w, h);
+    // Nothing exists above the top of the screen: stretch the first real row up.
+    const top = Math.max(0, Math.ceil(pad - ry));
+    if (top > 0) srcCtx.drawImage(srcCanvas, 0, top, w, 1, 0, 0, w, top);
+    blurCtx.clearRect(0, 0, w, h);
+    blurCtx.filter = `blur(${blurPx}px) saturate(1.4)`;
+    blurCtx.drawImage(srcCanvas, 0, 0);
+    blurCtx.filter = 'none';
+    blurMap = { x: pad, y: pad, w: rw, h: rh };
+    if (!glassReadyAt) glassReadyAt = performance.now();
+    kick();
+  }
+
+  async function startCapture(info) {
+    capInfo = info;
+    clearTimeout(stopTimer);
+    if (!cfg.glass) return;
+    if (cap && cap.sourceId === info.sourceId) { buildBlur(); return; }
+    stopCapture();
+    const mine = cap = { sourceId: info.sourceId, stream: null, video: null };
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { mandatory: {
+          chromeMediaSource: 'desktop',
+          chromeMediaSourceId: info.sourceId,
+          // Low resolution and frame rate are plenty: it gets heavily blurred.
+          maxWidth: Math.round(info.display.width / 3),
+          maxHeight: Math.round(info.display.height / 3),
+          maxFrameRate: 15,
+        } },
+      });
+      if (cap !== mine) { stream.getTracks().forEach((t) => t.stop()); return; }
+      const video = document.createElement('video');
+      video.muted = true;
+      video.srcObject = stream;
+      await video.play();
+      mine.stream = stream;
+      mine.video = video;
+      const onFrame = () => {
+        if (cap !== mine) return;
+        buildBlur();
+        video.requestVideoFrameCallback(onFrame);
+      };
+      video.requestVideoFrameCallback(onFrame);
+    } catch (e) {
+      console.warn('glass capture failed', e);
+      if (cap === mine) cap = null;
+    }
+  }
+
+  function stopCapture() {
+    if (cap && cap.stream) cap.stream.getTracks().forEach((t) => t.stop());
+    cap = null;
+    blurMap = null;
+    glassReadyAt = 0;
+  }
+
+  // ===== Media ===============================================================
+
+  let media = { none: true };
+  let mediaAt = Date.now();
+  let artUrl = null;
+  let progressTimer = null;
+
+  function fmt(ms) {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    const ss = String(sec).padStart(2, '0');
+    return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+  }
+
+  function isPlaying() { return !media.none && media.status === 'playing'; }
+
+  // The app reports position at updatedAt; extrapolate while playing.
+  function positionNow() {
+    if (media.none || !media.duration) return 0;
+    let p = media.position || 0;
+    if (isPlaying()) {
+      const at = media.updatedAt > 946684800000 ? media.updatedAt : mediaAt;
+      p += Math.max(0, Date.now() - at);
+    }
+    return Math.min(Math.max(p, 0), media.duration);
+  }
+
+  function renderProgress() {
+    const dur = media.none ? 0 : media.duration || 0;
+    const pos = positionNow();
+    $('fill').style.transform = `scaleX(${dur ? pos / dur : 0})`;
+    $('elapsed').textContent = fmt(pos);
+    $('remaining').textContent = '-' + fmt(dur - pos);
+  }
+
+  function renderMedia() {
+    const idle = media.none || (!media.title && !media.artist);
+    body.classList.toggle('idle', idle);
+    body.classList.toggle('playing', isPlaying());
+    body.classList.toggle('seekable', !idle && !!media.canSeek && media.duration > 0);
+    $('title').textContent = idle ? 'Nothing playing' : (media.title || 'Unknown title');
+    $('artist').textContent = idle ? 'Play something in Spotify or your browser' : (media.artist || media.album || '');
+    $('prev').disabled = idle || !media.canPrev;
+    $('next').disabled = idle || !media.canNext;
+    $('play').disabled = idle || !media.canToggle;
+    if (idle) setArt(null);
+    renderProgress();
+  }
+
+  function setArt(url) {
+    if (url === artUrl) return;
+    artUrl = url;
+    if (!url) {
+      $('art').classList.remove('has');
+      setAccent(null);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      if (artUrl !== url) return;
+      $('artImg').src = url;
+      $('art').classList.add('has');
+      setAccent(accentFrom(img));
+    };
+    img.src = url;
+  }
+
+  // Most vivid hue in the artwork, lifted so it reads on the island.
+  function accentFrom(img) {
+    const n = 24;
+    const c = document.createElement('canvas');
+    c.width = c.height = n;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.drawImage(img, 0, 0, n, n);
+    const d = x.getImageData(0, 0, n, n).data;
+    const bins = Array.from({ length: 12 }, () => ({ w: 0, r: 0, g: 0, b: 0 }));
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255;
+      const max = Math.max(r, g, b), min = Math.min(r, g, b);
+      const l = (max + min) / 2;
+      if (max === min || l < 0.12 || l > 0.92) continue;
+      const s = (max - min) / (1 - Math.abs(2 * l - 1));
+      let h;
+      if (max === r) h = ((g - b) / (max - min)) % 6;
+      else if (max === g) h = (b - r) / (max - min) + 2;
+      else h = (r - g) / (max - min) + 4;
+      h = ((h * 60) + 360) % 360;
+      const w = s * s * (1 - Math.abs(l - 0.55));
+      const bin = bins[Math.floor(h / 30) % 12];
+      bin.w += w; bin.r += d[i] * w; bin.g += d[i + 1] * w; bin.b += d[i + 2] * w;
+    }
+    const best = bins.reduce((a, b) => (b.w > a.w ? b : a));
+    if (best.w < 1.5) return null; // greyscale artwork
+    const r = best.r / best.w, g = best.g / best.w, b = best.b / best.w;
+    return lift(r, g, b);
+  }
+
+  function lift(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h = 0;
+    const dl = max - min;
+    if (dl) {
+      if (max === r) h = ((g - b) / dl) % 6;
+      else if (max === g) h = (b - r) / dl + 2;
+      else h = (r - g) / dl + 4;
+    }
+    h = ((h * 60) + 360) % 360;
+    const l0 = (max + min) / 2;
+    const s0 = dl ? dl / (1 - Math.abs(2 * l0 - 1)) : 0;
+    const s = Math.max(0.5, Math.min(0.9, s0));
+    const l = cfg.dark ? 0.7 : 0.48;
+    return `hsl(${Math.round(h)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%)`;
+  }
+
+  function setAccent(color) {
+    rootStyle.setProperty('--accent', color || (cfg.dark ? '#a9b8ff' : '#5b6ee1'));
+    rootStyle.setProperty('--accent-glow', color ? color.replace(')', ' / 0.55)') : 'transparent');
+  }
+
+  function onMediaState(s) {
+    media = s || { none: true };
+    mediaAt = Date.now();
+    renderMedia();
+  }
+
+  // ===== Wiring ==============================================================
+
+  function applyConfig(c) {
+    const glassWas = cfg.glass;
+    cfg = c;
+    body.classList.toggle('light', !c.dark);
+    if (!c.glass) stopCapture();
+    else if (!glassWas && capInfo && body.classList.contains('open')) startCapture(capInfo);
+    setAccent(null);
+    if (artUrl) { const u = artUrl; artUrl = null; setArt(u); }
+    kick();
+  }
 
   window.island.onState((s) => {
     if (s === 'open') {
       // Two frames so the collapsed state is committed before the transition starts.
-      requestAnimationFrame(() => requestAnimationFrame(() => body.classList.add('open')));
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        body.classList.add('open');
+        kick();
+      }));
+      clearInterval(progressTimer);
+      progressTimer = setInterval(renderProgress, 250);
+      renderProgress();
     } else {
       body.classList.remove('open');
       window.island.setHover(false);
+      clearInterval(progressTimer);
+      kick();
+      // Keep capturing briefly so a quick re-open is instant.
+      clearTimeout(stopTimer);
+      stopTimer = setTimeout(stopCapture, 4000);
     }
   });
+
+  window.island.onCapture((info) => startCapture(info));
+  window.island.onConfig(applyConfig);
+  window.island.onMedia(onMediaState);
+  window.island.onArt((a) => setArt(a && a.url));
 
   // Mouse input is off for the transparent window; turn it on over the shape.
   shape.addEventListener('mouseenter', () => window.island.setHover(true));
   shape.addEventListener('mouseleave', () => window.island.setHover(false));
 
-  // Demo only until the media module lands.
-  document.getElementById('play').addEventListener('click', () => body.classList.toggle('playing'));
+  $('play').addEventListener('click', () => {
+    // Optimistic: flip now, the helper confirms a moment later.
+    media = { ...media, status: isPlaying() ? 'paused' : 'playing', position: positionNow(), updatedAt: Date.now() };
+    renderMedia();
+    window.island.media('toggle');
+  });
+  $('next').addEventListener('click', () => window.island.media('next'));
+  $('prev').addEventListener('click', () => window.island.media('prev'));
+  $('bar').addEventListener('click', (e) => {
+    if (!body.classList.contains('seekable')) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ms = Math.round(((e.clientX - rect.left) / rect.width) * media.duration);
+    media = { ...media, position: ms, updatedAt: Date.now() };
+    renderProgress();
+    window.island.media(`seek ${ms}`);
+  });
+
+  addEventListener('resize', () => { sizeCanvas(); kick(); });
+  sizeCanvas();
+
+  window.island.snapshot().then((snap) => {
+    applyConfig(snap.config);
+    onMediaState(snap.media);
+    if (snap.art) setArt(snap.art.url);
+  });
 </script>
 </body>
 </html>

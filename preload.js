@@ -1,6 +1,14 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+const listen = (channel) => (cb) => ipcRenderer.on(channel, (_e, value) => cb(value));
+
 contextBridge.exposeInMainWorld('island', {
-  onState: (cb) => ipcRenderer.on('island-state', (_e, state) => cb(state)),
+  snapshot: () => ipcRenderer.invoke('snapshot'),
+  onState: listen('island-state'),
+  onConfig: listen('config'),
+  onCapture: listen('capture'),
+  onMedia: listen('media-state'),
+  onArt: listen('media-art'),
   setHover: (over) => ipcRenderer.send('hover', !!over),
+  media: (cmd) => ipcRenderer.send('media-cmd', String(cmd)),
 });
