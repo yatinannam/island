@@ -1,24 +1,26 @@
 # island
 
-Spike to prove: hover-reveal island, click-through ripple overlay, glass look.
+A Mac-style island for Windows 11. Rest the cursor on the top-center edge of any screen and a black island springs down from the edge. Move away and it tucks back up.
 
-## Run (Windows 11)
+## Run
 
     bun install
-    bun run start        # transparent window + fake glass
-    bun run acrylic      # real DWM acrylic blur (window is rectangular)
+    bun run start        # normal: hover the top edge to open
+    bun run dev          # starts with the island pinned open
 
 The first run downloads the Electron binary (about 100MB), so it is slow once.
 
-Move the cursor to the very top edge, center of the primary screen.
+- Ctrl+Alt+I pins the island open (or closes it).
+- Ctrl+Alt+Q quits. The tray icon also has Quit.
+- Set `ISLAND_DEBUG=1` to log open/close events with cursor coordinates.
 
-Hotkeys: Ctrl+Alt+I toggles the island, Ctrl+Alt+Q quits.
+## How it works
 
-## What to check
+- One transparent, always-on-top, non-focusable window sits at the top center of the display under the cursor. It is hidden while the island is closed, so nothing covers fullscreen games or video.
+- The main process polls the cursor every 16ms. Resting in the 240x3px hot zone for 150ms opens the island. Leaving the island for 300ms closes it.
+- The window ignores the mouse except over the island shape itself, so the area around it never blocks clicks.
+- Open and close use a real damped-spring curve, generated at startup and fed to CSS as a `linear()` easing.
 
-1. Island appears on hover at top center, closes ~0.35s after cursor leaves.
-2. Rings spread from the island and you can still click apps under them.
-3. Island does not steal focus (type in another app while it is open).
-4. Compare `npm start` vs `npm run acrylic`: which glass looks right?
-5. Open a fullscreen video/game: note whether island/ripple show over it.
-6. Idle CPU in Task Manager (poller runs at ~60Hz).
+## Status
+
+The island shell is done. The music card shows demo data until the media module is built.
