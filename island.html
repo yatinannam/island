@@ -4,9 +4,10 @@
 <meta charset="utf-8">
 <style>
   :root {
-    /* Expanded size: must match SHAPE_W / SHAPE_H in main.js */
+    /* Expanded size: must match SHAPE_W / SHAPE_H / SHELF_H in main.js */
     --w: 380px;
     --h: 140px;
+    --shelf-h: 76px;
     /* Collapsed size: a sliver tucked into the top edge */
     --cw: 150px;
     --ch: 0px;
@@ -27,7 +28,10 @@
     --press: rgba(255, 255, 255, 0.16);
     --eq-top: #ffffff;
     --eq-bottom: rgba(255, 255, 255, 0.55);
+    --divider: rgba(255, 255, 255, 0.08);
   }
+  /* The island grows by the shelf's height when it has files or one is being dragged in */
+  body.shelf-on { --h: calc(140px + var(--shelf-h)); }
   body.light {
     --label: #1c1c1e;
     --label-2: rgba(60, 60, 67, 0.68);
@@ -38,6 +42,7 @@
     --press: rgba(0, 0, 0, 0.1);
     --eq-top: #1c1c1e;
     --eq-bottom: rgba(28, 28, 30, 0.5);
+    --divider: rgba(0, 0, 0, 0.08);
   }
   html, body {
     margin: 0; height: 100%; overflow: hidden;
@@ -175,6 +180,57 @@
   .icon-pause { display: none; }
   .playing .icon-play { display: none; }
   .playing .icon-pause { display: inline; }
+
+  /* ===== File shelf: a row under the music ===== */
+  .shelf {
+    position: absolute; left: 14px; right: 14px; top: 140px; height: 68px;
+    display: flex; align-items: center; gap: 6px;
+    opacity: 0; pointer-events: none; transition: opacity 160ms ease;
+  }
+  .shelf-on .shelf { opacity: 1; pointer-events: auto; }
+  .shelf::before {
+    content: ""; position: absolute; left: 8px; right: 8px; top: -3px; height: 1px; background: var(--divider);
+  }
+  .tiles {
+    flex: 1; height: 100%; display: flex; align-items: center; gap: 4px;
+    overflow-x: auto; overflow-y: hidden; scrollbar-width: none; transition: opacity 120ms;
+  }
+  .tiles::-webkit-scrollbar { display: none; }
+  .tile {
+    position: relative; flex: none; width: 60px; height: 64px; border-radius: 10px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    transition: background 120ms ease;
+  }
+  .tile:hover { background: var(--hover); }
+  .tile img, .tile .generic { width: 36px; height: 36px; object-fit: contain; pointer-events: none; -webkit-user-drag: none; }
+  .tile .generic { fill: var(--label-3); }
+  .tile span {
+    max-width: 56px; font-size: 10.5px; line-height: 13px; color: var(--label-2);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tile .x {
+    position: absolute; top: 1px; right: 3px; width: 18px; height: 18px;
+    background: rgba(40, 40, 44, 0.9); color: #fff; opacity: 0;
+  }
+  .tile .x svg { width: 8px; height: 8px; stroke: currentColor; stroke-width: 2.4; fill: none; stroke-linecap: round; }
+  .tile:hover .x { opacity: 1; }
+  .tile .x:hover { background: rgba(70, 70, 76, 0.95); }
+  .shelf-actions { display: flex; flex-direction: column; gap: 4px; flex: none; transition: opacity 120ms; }
+  .shelf-actions button { width: 28px; height: 28px; color: var(--label-2); }
+  .shelf-actions button:hover { color: var(--label); }
+  .shelf-actions svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* Shown while files are dragged over the island */
+  .dropzone {
+    position: absolute; inset: 4px 0;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    border: 1.5px dashed var(--label-3); border-radius: 16px;
+    font-size: 12.5px; color: var(--label-2);
+    opacity: 0; pointer-events: none; transition: opacity 120ms ease, border-color 120ms ease;
+  }
+  .dropzone svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .drag-over .dropzone { opacity: 1; border-color: var(--label-2); }
+  .drag-over .tiles, .drag-over .shelf-actions { opacity: 0.12; }
 </style>
 </head>
 <body class="idle">
@@ -210,6 +266,21 @@
           <button id="next" title="Next" disabled>
             <svg viewBox="0 0 24 24"><path d="M4.1 6.5 12.6 12 4.1 17.5Z M13.1 6.5 21.6 12 13.1 17.5Z"/></svg>
           </button>
+        </div>
+        <div class="shelf" id="shelf">
+          <div class="tiles" id="tiles"></div>
+          <div class="shelf-actions">
+            <button id="dragAll" title="Drag all files out" draggable="true">
+              <svg viewBox="0 0 24 24"><rect x="4" y="8" width="12" height="12" rx="2.5"/><path d="M8 5.5V5a1 1 0 0 1 1-1h9a2 2 0 0 1 2 2v9a1 1 0 0 1-1 1h-.5"/></svg>
+            </button>
+            <button id="clearShelf" title="Clear shelf">
+              <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+            </button>
+          </div>
+          <div class="dropzone">
+            <svg viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></svg>
+            Drop files here
+          </div>
         </div>
       </div>
     </div>
@@ -712,6 +783,8 @@
     } else {
       body.classList.remove('open');
       clearInterval(progressTimer);
+      dragDepth = 0;
+      setDragOver(false); // a drag that left without a dragleave
       kick();
       // Keep capturing briefly so a quick re-open is instant.
       clearTimeout(stopTimer);
@@ -771,6 +844,113 @@
   scrub.addEventListener('pointercancel', () => endScrub(false));
   scrub.addEventListener('lostpointercapture', () => endScrub(true));
 
+  // ===== File shelf ==========================================================
+
+  const SHELF_EXTRA = 76; // matches --shelf-h and SHELF_H in main.js
+  let shelfItems = [];
+  let dragDepth = 0;
+  let draggingOut = false; // our own drag-out passing back over the island
+
+  function updateShelfSize() {
+    const on = shelfItems.length > 0 || body.classList.contains('drag-over');
+    body.classList.toggle('shelf-on', on);
+    window.island.shapeSize(on ? SHAPE_H + SHELF_EXTRA : SHAPE_H);
+    kick();
+  }
+
+  function renderShelf(items) {
+    shelfItems = Array.isArray(items) ? items : [];
+    const tiles = $('tiles');
+    tiles.textContent = '';
+    for (const item of shelfItems) {
+      const tile = document.createElement('div');
+      tile.className = 'tile';
+      tile.draggable = true;
+      tile.title = item.name;
+      if (item.thumb) {
+        const img = document.createElement('img');
+        img.src = item.thumb;
+        img.alt = '';
+        tile.append(img);
+      } else {
+        tile.insertAdjacentHTML('beforeend',
+          '<svg class="generic" viewBox="0 0 24 24"><path d="M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm7 1.5V9h5.5z"/></svg>');
+      }
+      const label = document.createElement('span');
+      label.textContent = item.name;
+      tile.append(label);
+      const x = document.createElement('button');
+      x.className = 'x';
+      x.title = 'Remove from shelf';
+      x.innerHTML = '<svg viewBox="0 0 10 10"><path d="M2 2l6 6M8 2 2 8"/></svg>';
+      x.addEventListener('click', (e) => { e.stopPropagation(); window.island.shelfRemove(item.id); });
+      x.addEventListener('dblclick', (e) => e.stopPropagation());
+      tile.append(x);
+      tile.addEventListener('dblclick', () => window.island.shelfOpen(item.id));
+      tile.addEventListener('dragstart', (e) => startDragOut(e, [item.id]));
+      tiles.append(tile);
+    }
+    updateShelfSize();
+  }
+
+  // Windows runs the actual drag; the page only asks for it.
+  function startDragOut(e, ids) {
+    e.preventDefault();
+    if (!ids.length) return;
+    draggingOut = true;
+    setTimeout(() => { draggingOut = false; }, 400);
+    window.island.shelfDrag(ids);
+  }
+
+  $('dragAll').addEventListener('dragstart', (e) => startDragOut(e, shelfItems.map((i) => i.id)));
+  $('clearShelf').addEventListener('click', () => window.island.shelfClear());
+  $('tiles').addEventListener('wheel', (e) => {
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { e.currentTarget.scrollLeft += e.deltaY; e.preventDefault(); }
+  }, { passive: false });
+
+  const isFileDrag = (e) => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
+
+  function setDragOver(on) {
+    if (body.classList.contains('drag-over') === on) return;
+    body.classList.toggle('drag-over', on);
+    updateShelfSize();
+  }
+
+  addEventListener('dragenter', (e) => {
+    if (!isFileDrag(e) || draggingOut) return;
+    e.preventDefault();
+    dragDepth++;
+    setDragOver(true);
+  });
+  addEventListener('dragover', (e) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault(); // allows the drop, and stops Electron from opening the file
+    e.dataTransfer.dropEffect = draggingOut ? 'none' : 'copy';
+  });
+  addEventListener('dragleave', (e) => {
+    if (!isFileDrag(e)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (!dragDepth) setDragOver(false);
+  });
+  addEventListener('drop', async (e) => {
+    e.preventDefault();
+    dragDepth = 0;
+    setDragOver(false);
+    if (!isFileDrag(e) || draggingOut) return;
+    const paths = [];
+    for (const file of Array.from(e.dataTransfer.files)) {
+      const p = window.island.pathForFile(file);
+      if (p) paths.push(p);
+      else if (file.size > 0 && file.size <= 200 * 1024 * 1024) {
+        // Only exists in memory (e.g. an image dragged from a browser): keep its bytes.
+        window.island.shelfAddData(file.name, await file.arrayBuffer());
+      }
+    }
+    if (paths.length) window.island.shelfAdd(paths);
+  });
+
+  window.island.onShelf(renderShelf);
+
   addEventListener('resize', () => { sizeCanvas(); kick(); });
   sizeCanvas();
 
@@ -778,6 +958,7 @@
     applyConfig(snap.config);
     onMediaState(snap.media);
     if (snap.art) setArt(snap.art.url);
+    renderShelf(snap.shelf);
   });
 </script>
 </body>

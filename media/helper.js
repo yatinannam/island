@@ -43,8 +43,11 @@ function build() {
 }
 
 class MediaHelper extends EventEmitter {
-  constructor() {
+  // exe: a prebuilt smtc.exe (the packaged app ships one); otherwise it is
+  // compiled on first run into media/bin.
+  constructor({ exe } = {}) {
     super();
+    this.exe = exe || null;
     this.proc = null;
     this.state = { none: true };
     this.art = null;
@@ -53,18 +56,20 @@ class MediaHelper extends EventEmitter {
   }
 
   async start() {
-    try {
-      await build();
-    } catch (e) {
-      this.emit('error', e);
-      return;
+    if (!this.exe) {
+      try {
+        this.exe = await build();
+      } catch (e) {
+        this.emit('error', e);
+        return;
+      }
     }
     this.spawn();
   }
 
   spawn() {
     if (this.stopped) return;
-    const proc = spawn(EXE, [], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    const proc = spawn(this.exe, [], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     this.proc = proc;
     const rl = readline.createInterface({ input: proc.stdout });
     rl.on('line', (line) => this.onLine(line));
@@ -105,4 +110,4 @@ class MediaHelper extends EventEmitter {
   }
 }
 
-module.exports = { MediaHelper };
+module.exports = { MediaHelper, build, EXE };

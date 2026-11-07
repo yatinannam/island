@@ -1,14 +1,58 @@
 {
   "name": "island",
-  "version": "0.0.2",
+  "productName": "island",
+  "version": "0.1.0",
+  "description": "A Mac-style island for Windows: music and a file shelf at the top of your screen",
+  "author": "yatinannam",
   "main": "main.js",
-  "devDependencies": {
-    "electron": "^45.2.3"
-  },
-  "description": "Hover-reveal top island for Windows",
   "scripts": {
     "start": "electron .",
     "dev": "electron . --open",
-    "quit": "electron . --quit"
+    "quit": "electron . --quit",
+    "dist": "node scripts/build-helper.js && node scripts/make-icon.js && electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.yatinannam.island",
+    "productName": "island",
+    "copyright": "yatinannam",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "settings-preload.js",
+      "island.html",
+      "settings.html",
+      "settings.js",
+      "shelf.js",
+      "icon.js",
+      "tray-visibility.js",
+      "media/helper.js",
+      "package.json"
+    ],
+    "extraResources": [
+      { "from": "media/bin/smtc.exe", "to": "smtc.exe" }
+    ],
+    "npmRebuild": false,
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico",
+      "executableName": "island"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
+      "shortcutName": "island",
+      "artifactName": "island-setup-${version}.${ext}"
+    }
   }
 }

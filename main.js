@@ -1,4 +1,4 @@
-﻿// island: hover-reveal top island for Windows.
+// island: hover-reveal top island for Windows.
 // Run:     bun install && bun run start
 // Flags:   --open   start with the island pinned open (for testing)
 //          --solid  start with glass off
@@ -7,25 +7,29 @@
 
 const {
   app, BrowserWindow, screen, globalShortcut, ipcMain, Tray, Menu,
-  desktopCapturer, nativeTheme, systemPreferences,
+  desktopCapturer, nativeTheme, systemPreferences, nativeImage, shell,
 } = require('electron');
 const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { MediaHelper } = require('./media/helper');
 const { Settings } = require('./settings');
+const { Shelf } = require('./shelf');
 const { trayImage } = require('./icon');
 const { isPromoted, setPromoted } = require('./tray-visibility');
 
-// Expanded island shape, in DIP. Must match --w / --h in island.html.
+// Expanded island shape, in DIP. Must match --w / --h / --shelf-h in island.html.
 const SHAPE_W = 380;
-const SHAPE_H = 140;
+const SHAPE_H = 140;        // music only
+const SHELF_H = 76;         // extra height when the file shelf shows
 // Window is bigger than the shape so the spring overshoot, the top "ears"
-// and the shadow are not clipped.
+// and the shadow are not clipped. Sized for the tallest island once, since
+// the window is never resized or moved (see closeIsland).
 const PAD_X = 48;
 const PAD_B = 48;
 const WIN_W = SHAPE_W + PAD_X * 2;
-const WIN_H = SHAPE_H + PAD_B;
+const WIN_H = SHAPE_H + SHELF_H + PAD_B;
+let shapeH = SHAPE_H;       // current island height, reported by the renderer
 
 const HOT_W = 240;          // hot zone width, centered on the top edge
 const HOT_H = 3;            // px from the top edge that triggers
@@ -55,7 +59,9 @@ let forceSolid = process.argv.includes('--solid');
 let theme = { dark: true, transparency: true };
 const sourceIds = new Map(); // display id -> desktopCapturer source id
 
-const media = new MediaHelper();
+// Packaged: smtc.exe ships in resources. Development: compiled on first run.
+const media = new MediaHelper({ exe: app.isPackaged ? path.join(process.resourcesPath, 'smtc.exe') : null });
+const shelf = new Shelf(app.getPath('userData'));
 
 const DEBUG = process.env.ISLAND_DEBUG === '1';
 const log = (...a) => { if (DEBUG) console.log('[island]', ...a); };
@@ -92,7 +98,7 @@ function shapeRect(d) {
     x: b.x + (b.width - SHAPE_W) / 2,
     y: b.y,
     width: SHAPE_W,
-    height: SHAPE_H,
+    height: shapeH,
   };
 }
 
@@ -219,6 +225,7 @@ function openIsland(d) {
   if (!win.isVisible()) win.showInactive(); // first open only
   send('island-state', 'open');
   refreshTheme();
+  shelf.prune(); // files moved elsewhere since last time drop off
   if (process.env.ISLAND_SHOT) {
     setTimeout(async () => {
       const img = await win.webContents.capturePage();
@@ -415,14 +422,21 @@ function preview() {
 
 // ---- tray ------------------------------------------------------------------
 
-// A fixed GUID lets Windows recognise the icon across restarts, so its
-// "always show" choice sticks. Tied to the exe path while unsigned.
-const TRAY_GUID = 'f98d0c7d-c510-4166-988f-ba324e0b6754';
+// A stable GUID lets Windows recognise the icon across restarts, so its
+// "always show" choice sticks. While unsigned, Windows ties a GUID to one
+// exe path, so derive it from the path: the dev copy, a test build and the
+// installed app each get their own, and the same one every run.
+function guidForPath(p) {
+  const h = require('crypto').createHash('sha1').update(`island-tray:${p.toLowerCase()}`).digest('hex');
+  const variant = (8 | (parseInt(h[16], 16) & 3)).toString(16);
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${variant}${h.slice(17, 20)}-${h.slice(20, 32)}`;
+}
+const TRAY_GUID = guidForPath(process.execPath);
 
 function trayTooltip() {
   const m = media.state;
   if (!m || m.none || !m.title) return 'island';
-  const line = m.artist ? `${m.title} Â· ${m.artist}` : m.title;
+  const line = m.artist ? `${m.title} · ${m.artist}` : m.title;
   return `island\n${line}`.slice(0, 127); // Windows caps tooltips at 127 chars
 }
 
@@ -440,10 +454,13 @@ function createTray() {
   tray.on('right-click', () => tray.popUpContextMenu(menu));
   // Show the icon on the taskbar instead of the ^ overflow, once. After
   // that it's the user's call, from our settings or Windows' own.
-  if (!settings.values.trayPromoted) {
+  if (!settings.values.trayPromotedGuids.includes(TRAY_GUID)) {
     setPromoted(TRAY_GUID, true).then((ok) => {
-      log('tray promoted:', ok);
-      if (ok) { settings.update({ trayPromoted: true }); sendSettings(); }
+      log('tray promoted:', ok, TRAY_GUID);
+      if (ok) {
+        settings.update({ trayPromotedGuids: [...settings.values.trayPromotedGuids, TRAY_GUID].slice(-10) });
+        sendSettings();
+      }
     });
   }
 }
@@ -468,7 +485,78 @@ ipcMain.on('media-cmd', (_e, cmd) => {
   media.command(String(cmd));
 });
 
-ipcMain.handle('snapshot', () => ({ config: config(), media: media.state, art: media.art }));
+ipcMain.handle('snapshot', async () => ({
+  config: config(), media: media.state, art: media.art, shelf: await shelfPayload(),
+}));
+
+// ---- file shelf --------------------------------------------------------------
+
+const thumbs = new Map(); // path -> data URL
+
+async function thumbFor(item) {
+  if (thumbs.has(item.path)) return thumbs.get(item.path);
+  let img = null;
+  try {
+    // Windows shell thumbnail: real previews for images, videos, PDFs; icons otherwise.
+    img = await nativeImage.createThumbnailFromPath(item.path, { width: 112, height: 112 });
+  } catch {}
+  if (!img || img.isEmpty()) {
+    try { img = await app.getFileIcon(item.path, { size: 'large' }); } catch {}
+  }
+  const url = img && !img.isEmpty() ? img.toDataURL() : null;
+  thumbs.set(item.path, url);
+  return url;
+}
+
+async function shelfPayload() {
+  return Promise.all(shelf.items.map(async (i) => ({
+    id: i.id, name: i.name, dir: i.dir, thumb: await thumbFor(i),
+  })));
+}
+
+async function sendShelf() {
+  send('shelf', await shelfPayload());
+}
+
+shelf.on('change', () => {
+  for (const p of thumbs.keys()) if (!shelf.items.some((i) => i.path === p)) thumbs.delete(p);
+  sendShelf();
+});
+
+ipcMain.on('shape-size', (_e, h) => {
+  const v = Number(h);
+  if (Number.isFinite(v)) shapeH = Math.min(SHAPE_H + SHELF_H, Math.max(SHAPE_H, v));
+});
+
+ipcMain.on('shelf-add', (_e, paths) => {
+  if (Array.isArray(paths)) log('shelf added', shelf.add(paths));
+});
+
+ipcMain.on('shelf-add-data', (_e, file) => {
+  if (file && file.bytes) log('shelf data', file.name, shelf.addData(file.name, file.bytes));
+});
+
+ipcMain.on('shelf-remove', (_e, id) => shelf.remove(String(id)));
+ipcMain.on('shelf-clear', () => shelf.clear());
+
+ipcMain.on('shelf-open', (_e, id) => {
+  const item = shelf.get(String(id));
+  if (item) shell.openPath(item.path);
+});
+
+// Drag files out of the shelf into any app or folder. Windows decides copy
+// or move like Explorer does; moved files drop off the shelf afterwards.
+ipcMain.on('shelf-drag', async (e, ids) => {
+  const items = (Array.isArray(ids) ? ids : []).map((id) => shelf.get(String(id))).filter(Boolean)
+    .filter((i) => fs.existsSync(i.path));
+  if (!items.length) return;
+  let icon = nativeImage.createFromDataURL((await thumbFor(items[0])) || '');
+  if (icon.isEmpty()) icon = await app.getFileIcon(items[0].path, { size: 'normal' });
+  else icon = icon.resize({ width: 64 });
+  log('shelf drag', items.map((i) => i.name));
+  e.sender.startDrag({ file: items[0].path, files: items.map((i) => i.path), icon });
+  setTimeout(() => shelf.prune(), 500);
+});
 
 ipcMain.handle('settings-get', () => settingsPayload());
 
@@ -515,7 +603,13 @@ media.on('error', (e) => log('media:', e.message));
 // ---- app -------------------------------------------------------------------
 
 app.whenReady().then(async () => {
+  // `--start-with-windows on|off`: set the login item for this exe (scripts, installs).
+  const sww = process.argv.indexOf('--start-with-windows');
+  if (sww >= 0 && ['on', 'off'].includes(process.argv[sww + 1])) {
+    app.setLoginItemSettings({ ...loginItem(), openAtLogin: process.argv[sww + 1] === 'on' });
+  }
   settings.load();
+  shelf.load();
   theme = await readTheme();
   createWindow();
   createTray();

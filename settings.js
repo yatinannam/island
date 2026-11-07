@@ -9,7 +9,7 @@ const DEFAULTS = {
   songColor: 55,        // 0..100, how much of the artwork's color tints the island (0 = off)
   openDelay: 150,       // ms the cursor rests on the top edge before opening
   closeDelay: 120,      // ms the cursor is away before closing
-  trayPromoted: false,  // internal: tray icon was moved out of the ^ overflow once
+  trayPromotedGuids: [],  // internal: tray icons (one per exe path) already moved out of the ^ overflow once
 };
 
 const LIMITS = {
@@ -23,7 +23,9 @@ function clean(raw) {
   const out = { ...DEFAULTS };
   if (!raw || typeof raw !== 'object') return out;
   if (typeof raw.glass === 'boolean') out.glass = raw.glass;
-  if (typeof raw.trayPromoted === 'boolean') out.trayPromoted = raw.trayPromoted;
+  if (Array.isArray(raw.trayPromotedGuids)) {
+    out.trayPromotedGuids = raw.trayPromotedGuids.filter((g) => typeof g === 'string').slice(-10);
+  }
   for (const [key, [min, max]] of Object.entries(LIMITS)) {
     const v = Number(raw[key]);
     if (Number.isFinite(v)) out[key] = Math.round(Math.min(max, Math.max(min, v)));

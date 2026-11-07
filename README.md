@@ -1,21 +1,31 @@
 # island
 
-A Mac-style island for Windows 11. Rest the cursor on the top-center edge of any screen and a glass island springs down from the edge with whatever is playing. Move away and it tucks back up.
+A Mac-style island for Windows 11. Rest the cursor on the top-center edge of any screen and a glass island springs down from the edge with whatever is playing and a shelf for files. Move away and it tucks back up.
 
-## Run
+## Install
+
+    bun install
+    bun run dist
+
+This builds `dist\island-setup-<version>.exe`. Run it to install island for your user (no admin needed) into `%LOCALAPPDATA%\Programs\island`, with a Start menu entry and an uninstaller in Windows Settings > Apps.
+
+The installer is not code-signed, so Windows SmartScreen may say "Windows protected your PC" when it runs on another machine: click "More info", then "Run anyway".
+
+## Develop
 
     bun install
     bun run start        # normal: hover the top edge to open
     bun run dev          # starts with the island pinned open
+    bun run quit         # closes a running copy
 
 The first run downloads the Electron binary (about 100MB) and compiles the media helper, so it is slow once.
 
 - Left-click the tray icon for settings. Right-click it for Pin and Quit.
-- Ctrl+Alt+I pins the island open (or closes it). Ctrl+Alt+Q quits. `bun run quit` closes a running copy.
-- `--solid` starts with glass off. `--settings` opens the settings flyout on start.
+- Ctrl+Alt+I pins the island open (or closes it). Ctrl+Alt+Q quits.
+- `--solid` starts with glass off. `--settings` opens the settings flyout on start. `--start-with-windows on|off` sets the login item for that exe.
+- Set `ISLAND_DEBUG=1` to log open/close, clicks on the island, shelf and media events.
 
-The tray icon is put on the taskbar (not the hidden `^` menu) on first run. Turn that off with "Always show icon on taskbar" in settings, or in Windows Settings > Personalization > Taskbar > Other system tray icons. In development Windows lists it as "Electron".
-- Set `ISLAND_DEBUG=1` to log open/close events and media helper errors.
+The tray icon is put on the taskbar (not the hidden `^` menu) on first run. Turn that off with "Always show icon on taskbar" in settings, or in Windows Settings > Personalization > Taskbar > Other system tray icons.
 
 ## Settings
 
@@ -32,9 +42,15 @@ Settings are saved to `%APPDATA%\island\settings.json`.
 
 ## Music
 
-Works with anything that shows up in the Windows media flyout: Spotify, browsers (YouTube, YouTube Music, SoundCloud), Media Player, and more. Shows artwork, title, artist and progress; play/pause, next, previous, and click the bar to seek when the app allows it. The equalizer bars are a neutral white two-tone; the artwork's color goes into the background instead (Song color).
+Works with anything that shows up in the Windows media flyout: Spotify, browsers (YouTube, YouTube Music, SoundCloud), Media Player, and more. Shows artwork, title, artist and progress; play/pause, next, previous; click or drag the bar to seek when the app allows it. The equalizer bars are a neutral white two-tone; the artwork's color goes into the background instead (Song color).
 
-`media/smtc.cs` is a small C# program that talks to the Windows System Media Transport Controls API. It is compiled on first run with the C# compiler that ships with Windows (.NET Framework `csc.exe`), so nothing extra needs installing. It streams JSON lines to the app and takes commands on stdin.
+`media/smtc.cs` is a small C# program that talks to the Windows System Media Transport Controls API. In development it is compiled on first run with the C# compiler that ships with Windows (.NET Framework `csc.exe`); the installer ships it prebuilt. It streams JSON lines to the app and takes commands on stdin.
+
+## File shelf
+
+A place to park files for a moment. Drag files (or folders, or an image out of a browser) to the top edge: the island opens, and dropping on it adds them to a row under the music. Drag a file back out into any app or folder, or use the "drag all" button for everything at once. Double-click opens a file, × removes it from the shelf.
+
+The shelf holds references to your files, not copies, so big files cost nothing. Dragging out works like dragging from Explorer: Windows picks copy or move depending on where you drop (hold Ctrl to copy). If a file gets moved away, it leaves the shelf. Things with no file on disk, like a browser image, are saved under `%APPDATA%\island\shelf-files`. The shelf survives restarts (`shelf.json`).
 
 ## Glass
 
@@ -42,15 +58,14 @@ Windows cannot blur behind a rounded transparent window, so the island captures 
 
 Two trade-offs:
 
-- With glass on, the island does not appear in screenshots or screen recordings. Turn glass off from the tray menu to record it.
-- Capture runs only while the island is open and stops 4 seconds after it closes. Open with glass costs about 0.3 of a CPU core; closed costs about 1.6% of one core.
+- With glass on, the island does not appear in screenshots or screen recordings. Switch to Solid in settings to record it.
+- Capture runs only while the island is open and stops 4 seconds after it closes. Open with glass costs about 0.3 of a CPU core; closed costs about 1.5% of one core.
 
 ## How it works
 
-- One transparent, always-on-top, non-focusable window sits at the top center of the display under the cursor. While the island is closed it stays there, fully transparent and click-through.
-- The window ignores the mouse except while the cursor is over the island, decided from the same cursor polling.
+- One transparent, always-on-top, non-focusable window sits at the top center of the display under the cursor. Once shown it stays there; while the island is closed it is fully transparent and click-through.
 - The main process polls the cursor every 16ms. Resting in the 240x3px hot zone for the open delay (150ms) opens the island. Leaving it for the close delay (120ms) closes it, with a stiffer spring than the open.
-- The window ignores the mouse except over the island shape itself, so the area around it never blocks clicks.
+- The window takes the mouse only while the cursor is over the island, decided from the same cursor polling, so the area around it never blocks clicks.
 - Open and close use a real damped-spring curve, generated at startup and fed to CSS as a `linear()` easing. A canvas paints the notch shape each frame to follow it.
 
 ## Inspiration
