@@ -232,6 +232,8 @@
   .tile:hover .x { opacity: 1; }
   .tile .x:hover { background: rgba(70, 70, 76, 0.95); }
   .shelf-actions { display: flex; gap: 2px; flex: none; transition: opacity 120ms; }
+  /* The button reset (all: unset) also clears Chromium's drag setting; without this "drag all" never starts a drag */
+  #dragAll { -webkit-user-drag: element; }
   .shelf-actions button { width: 28px; height: 28px; color: var(--label-2); }
   .shelf-actions button:hover { color: var(--label); }
   .shelf-actions svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
