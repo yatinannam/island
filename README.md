@@ -207,7 +207,7 @@ Island window (`preload.js` → `window.island`):
 | renderer → main | `shelf-remove` / `shelf-open` / `shelf-clear` / `shelf-drag` | id / id / — / `string[]` |
 | renderer → main | `debug` | string, logged when `ISLAND_DEBUG=1` |
 
-Settings flyout (`settings-preload.js` → `window.settings`): `settings-get` (invoke), `settings-set` (partial settings), `settings-action` (`quit`, `hide`, `pin`, `start-with-windows-on|off`, `tray-shown-on|off`), `settings-size`; main pushes `settings` and `settings-shown`.
+Settings flyout (`settings-preload.js` → `window.settings`): `settings-get` (invoke), `settings-set` (partial settings), `settings-action` (`quit`, `hide`, `pin`, `start-with-windows-on|off`, `tray-shown-on|off`, `shelf-clear`), `settings-size` (the page's natural height); main pushes `settings`, `settings-shown` and `settings-hiding` (fade the content out before the window hides).
 
 ## Flags, environment variables, hotkeys
 

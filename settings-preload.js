@@ -7,4 +7,5 @@ contextBridge.exposeInMainWorld('settings', {
   resize: (height) => ipcRenderer.send('settings-size', height),
   onUpdate: (cb) => ipcRenderer.on('settings', (_e, payload) => cb(payload)),
   onShown: (cb) => ipcRenderer.on('settings-shown', () => cb()),
+  onHiding: (cb) => ipcRenderer.on('settings-hiding', () => cb()),
 });

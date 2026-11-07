@@ -4,173 +4,242 @@
 <meta charset="utf-8">
 <title>island settings</title>
 <style>
+  /* Windows 11 (Fluent) colors. The window itself is acrylic (backgroundMaterial),
+     so the page only draws cards, controls and the footer band on top of it. */
   :root {
     color-scheme: dark;
-    --accent: #0078d4;
-    --accent-ui: color-mix(in srgb, var(--accent) 70%, white);
+    --accent: #0078d4;                                          /* Windows accent, set by the script */
+    --accent-ui: color-mix(in srgb, var(--accent) 70%, white);  /* accent as Windows draws it on dark */
     --on-accent: #000;
     --text: #fff;
-    --text-2: rgba(255, 255, 255, 0.72);
-    --text-3: rgba(255, 255, 255, 0.5);
-    --card: rgba(255, 255, 255, 0.055);
-    --card-border: rgba(255, 255, 255, 0.07);
-    --control: rgba(255, 255, 255, 0.06);
-    --control-hover: rgba(255, 255, 255, 0.09);
-    --control-border: rgba(255, 255, 255, 0.09);
-    --track: rgba(255, 255, 255, 0.54);
+    --text-2: rgba(255, 255, 255, 0.786);
+    --text-3: rgba(255, 255, 255, 0.544);
+    --card: rgba(255, 255, 255, 0.0512);
+    --card-stroke: rgba(0, 0, 0, 0.1);
+    --control: rgba(255, 255, 255, 0.0605);
+    --control-hover: rgba(255, 255, 255, 0.0837);
+    --control-press: rgba(255, 255, 255, 0.0326);
+    --control-stroke: rgba(255, 255, 255, 0.0698);
+    --subtle-hover: rgba(255, 255, 255, 0.0605);
+    --subtle-press: rgba(255, 255, 255, 0.0419);
+    --strong: rgba(255, 255, 255, 0.5442);   /* switch outline, slider track */
+    --switch-off: rgba(0, 0, 0, 0.1);
     --thumb: #454545;
-    --divider: rgba(255, 255, 255, 0.08);
+    --divider: rgba(255, 255, 255, 0.0837);
+    --footer: rgba(0, 0, 0, 0.2);           /* darker band, like Quick Settings' footer */
+    /* Tint over Windows' acrylic: on its own it is lighter and more see-through
+       than Windows' flyouts. On html, not .panel, so it does not fade with the content. */
+    --tint: rgba(26, 26, 26, 0.6);
   }
   @media (prefers-color-scheme: light) {
     :root {
       color-scheme: light;
       --accent-ui: color-mix(in srgb, var(--accent) 80%, black);
       --on-accent: #fff;
-      --text: #1a1a1a;
-      --text-2: rgba(0, 0, 0, 0.62);
-      --text-3: rgba(0, 0, 0, 0.45);
-      --card: rgba(255, 255, 255, 0.5);
-      --card-border: rgba(0, 0, 0, 0.06);
+      --text: rgba(0, 0, 0, 0.896);
+      --text-2: rgba(0, 0, 0, 0.606);
+      --text-3: rgba(0, 0, 0, 0.446);
+      --card: rgba(255, 255, 255, 0.7);
+      --card-stroke: rgba(0, 0, 0, 0.0578);
       --control: rgba(255, 255, 255, 0.7);
-      --control-hover: rgba(249, 249, 249, 0.9);
-      --control-border: rgba(0, 0, 0, 0.08);
-      --track: rgba(0, 0, 0, 0.45);
+      --control-hover: rgba(249, 249, 249, 0.5);
+      --control-press: rgba(249, 249, 249, 0.3);
+      --control-stroke: rgba(0, 0, 0, 0.0578);
+      --subtle-hover: rgba(0, 0, 0, 0.0373);
+      --subtle-press: rgba(0, 0, 0, 0.0241);
+      --strong: rgba(0, 0, 0, 0.4458);
+      --switch-off: rgba(0, 0, 0, 0.0241);
       --thumb: #fff;
-      --divider: rgba(0, 0, 0, 0.08);
+      --divider: rgba(0, 0, 0, 0.0803);
+      --footer: rgba(0, 0, 0, 0.035);
+      --tint: rgba(243, 243, 243, 0.5);
     }
   }
   html, body {
-    margin: 0; background: transparent; color: var(--text);
+    margin: 0; height: 100%; overflow: hidden; background: transparent; color: var(--text);
     font: 14px/20px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-    user-select: none; cursor: default; overflow: hidden;
+    user-select: none; cursor: default;
   }
+  html { background: var(--tint); }
   [hidden] { display: none !important; }
-  main { padding: 16px; }
-  .shown main { animation: rise 260ms cubic-bezier(0.1, 0.9, 0.2, 1); }
-  @keyframes rise { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
 
-  header { display: flex; align-items: center; gap: 10px; margin: 0 2px 14px; }
-  .logo { width: 28px; height: 10px; border-radius: 0 0 6px 6px; background: var(--text); opacity: 0.9; }
-  h1 { font-size: 14px; font-weight: 600; margin: 0; flex: 1; }
-  .sub { font-size: 12px; color: var(--text-3); }
+  /* Like Windows' own tray flyouts: the panel appears in place and its content
+     fades in; on close the content fades out first (main hides the window after). */
+  .panel { display: flex; flex-direction: column; height: 100%; opacity: 0; transition: opacity 80ms linear; }
+  .shown .panel { opacity: 1; transition: opacity 167ms ease-out; }
+  /* Natural height, so the page can report it; scrolls only on very short screens */
+  .scroll { flex: 0 1 auto; min-height: 0; overflow-y: auto; padding: 14px 14px 16px; scrollbar-width: thin; }
 
-  h2 { font-size: 12px; font-weight: 600; color: var(--text-2); margin: 14px 4px 6px; }
-  .card { background: var(--card); border: 1px solid var(--card-border); border-radius: 8px; }
-  .row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; min-height: 28px; }
+  header { display: flex; align-items: center; gap: 10px; padding: 2px 4px 0; }
+  .glyph { width: 20px; height: 16px; flex: none; color: var(--text); }
+  h1 { margin: 0; flex: 1; font-size: 14px; font-weight: 600; }
+  .ver { font-size: 12px; line-height: 16px; color: var(--text-3); }
+  h2 { margin: 14px 4px 6px; font-size: 13px; line-height: 20px; font-weight: 600; }
+
+  /* Settings cards: title and description on the left, the control on the right */
+  .card { background: var(--card); border: 1px solid var(--card-stroke); border-radius: 6px; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; min-height: 26px; }
   .row + .row { border-top: 1px solid var(--divider); }
-  .row.stack { flex-direction: column; align-items: stretch; gap: 6px; }
+  .row.stack { flex-direction: column; align-items: stretch; gap: 3px; padding-bottom: 8px; }
   .row.disabled { opacity: 0.45; pointer-events: none; }
-  .label { flex: 1; }
-  .line { display: flex; align-items: center; gap: 12px; }
-  .value { font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; min-width: 46px; text-align: right; }
-  .note { font-size: 12px; line-height: 16px; color: var(--text-3); }
+  .text { flex: 1; min-width: 0; }
+  .desc { font-size: 12px; line-height: 16px; color: var(--text-2); margin-top: 2px; }
+  .line { display: flex; align-items: baseline; gap: 12px; }
+  .value { margin-left: auto; font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .state { flex: none; min-width: 24px; text-align: right; }
+
+  button { all: unset; box-sizing: border-box; }
+  button:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; border-radius: 4px; }
 
   /* Segmented control */
-  .seg { display: flex; padding: 2px; border-radius: 6px; background: var(--control); border: 1px solid var(--control-border); }
-  .seg button {
-    all: unset; padding: 3px 14px; border-radius: 4px; font-size: 13px; color: var(--text-2);
-    transition: background 120ms, color 120ms;
-  }
-  .seg button:hover { color: var(--text); }
+  .seg { flex: none; display: flex; padding: 2px; border-radius: 6px; background: var(--control); border: 1px solid var(--control-stroke); }
+  .seg button { padding: 3px 12px; border-radius: 4px; font-size: 13px; line-height: 20px; color: var(--text-2); transition: background 83ms, color 83ms; }
+  .seg button:hover { color: var(--text); background: var(--subtle-hover); }
   .seg button.on { background: var(--accent-ui); color: var(--on-accent); font-weight: 600; }
+  .seg.disabled { opacity: 0.45; pointer-events: none; }
 
-  /* Windows 11 style slider */
+  /* Standard button */
+  .btn {
+    flex: none; padding: 5px 12px 6px; border-radius: 4px; line-height: 20px; text-align: center;
+    background: var(--control); border: 1px solid var(--control-stroke); transition: background 83ms;
+  }
+  .btn:hover { background: var(--control-hover); }
+  .btn:active { background: var(--control-press); color: var(--text-2); }
+  .btn:disabled { color: var(--text-3); pointer-events: none; }
+
+  /* Slider */
   input[type=range] {
-    -webkit-appearance: none; appearance: none; flex: 1; height: 20px; margin: 0; background: transparent;
-    --pct: 50%;
+    -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 20px; margin: 0;
+    background: transparent; --pct: 50%;
   }
   input[type=range]::-webkit-slider-runnable-track {
     height: 4px; border-radius: 2px;
-    background: linear-gradient(to right, var(--accent-ui) var(--pct), var(--track) var(--pct));
+    background: linear-gradient(to right, var(--accent-ui) var(--pct), var(--strong) var(--pct));
   }
   input[type=range]::-webkit-slider-thumb {
     -webkit-appearance: none; width: 20px; height: 20px; margin-top: -8px; border-radius: 50%;
-    background: radial-gradient(circle, var(--accent-ui) 0 5px, var(--thumb) 5.5px);
-    box-shadow: 0 0 0 1px var(--control-border), 0 1px 2px rgba(0, 0, 0, 0.25);
-    transition: background 100ms;
+    background: radial-gradient(circle, var(--accent-ui) 0 6px, var(--thumb) 6.5px);
+    box-shadow: 0 0 0 1px var(--control-stroke), 0 1px 2px rgba(0, 0, 0, 0.25);
   }
-  input[type=range]:hover::-webkit-slider-thumb { background: radial-gradient(circle, var(--accent-ui) 0 6.5px, var(--thumb) 7px); }
-  input[type=range]:active::-webkit-slider-thumb { background: radial-gradient(circle, var(--accent-ui) 0 4px, var(--thumb) 4.5px); }
+  input[type=range]:hover::-webkit-slider-thumb { background: radial-gradient(circle, var(--accent-ui) 0 7px, var(--thumb) 7.5px); }
+  input[type=range]:active::-webkit-slider-thumb { background: radial-gradient(circle, var(--accent-ui) 0 5px, var(--thumb) 5.5px); }
   input[type=range]:focus { outline: none; }
+  input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--text); }
 
-  /* Windows 11 style toggle */
-  .toggle {
-    all: unset; position: relative; width: 40px; height: 20px; border-radius: 10px; flex: none;
-    border: 1px solid var(--text-2); box-sizing: border-box; transition: background 120ms, border-color 120ms;
+  /* Toggle switch */
+  .switch {
+    position: relative; flex: none; width: 40px; height: 20px; border-radius: 10px;
+    border: 1px solid var(--strong); background: var(--switch-off); transition: background 83ms, border-color 83ms;
   }
-  .toggle::after {
-    content: ""; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%;
-    background: var(--text-2); transition: transform 160ms cubic-bezier(0.2, 0.9, 0.3, 1.2), background 120ms;
+  .switch::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 6px;
+    background: var(--text-2);
+    transition: left 167ms cubic-bezier(0.55, 0.55, 0, 1), top 83ms, width 83ms, height 83ms, background 83ms;
   }
-  .toggle.on { background: var(--accent-ui); border-color: var(--accent-ui); }
-  .toggle.on::after { transform: translateX(20px); background: var(--on-accent); }
+  .switch:hover::after { top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 7px; }
+  .switch:active::after { width: 17px; }
+  .switch.on { background: var(--accent-ui); border-color: var(--accent-ui); }
+  .switch.on::after { left: 23px; background: var(--on-accent); }
+  .switch.on:hover::after { left: 22px; }
+  .switch.on:active::after { left: 19px; }
 
-  footer { display: flex; gap: 8px; margin-top: 14px; }
-  footer button {
-    all: unset; flex: 1; text-align: center; padding: 6px 0; border-radius: 6px; font-size: 13px;
-    background: var(--control); border: 1px solid var(--control-border);
-    transition: background 120ms;
+  /* Footer band with subtle buttons, like Quick Settings */
+  footer {
+    flex: none; margin-top: auto; display: flex; align-items: center; gap: 4px;
+    height: 48px; padding: 0 8px; box-sizing: border-box;
+    background: var(--footer); border-top: 1px solid var(--divider);
   }
-  footer button:hover { background: var(--control-hover); }
-  footer button:active { opacity: 0.8; }
-  footer button.primary { background: var(--accent-ui); color: var(--on-accent); border-color: transparent; font-weight: 600; }
+  .subtle {
+    display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border-radius: 4px;
+    font-size: 13px; transition: background 83ms;
+  }
+  .subtle:hover { background: var(--subtle-hover); }
+  .subtle:active { background: var(--subtle-press); color: var(--text-2); }
+  .subtle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+  .subtle.on svg { fill: var(--accent-ui); stroke: var(--accent-ui); }
+  .spacer { flex: 1; }
 </style>
 </head>
 <body>
-<main>
-  <header>
-    <div class="logo"></div>
-    <h1>island</h1>
-    <span class="sub">Settings</span>
-  </header>
+<div class="panel">
+  <div class="scroll" id="scroll">
+    <header>
+      <svg class="glyph" viewBox="0 0 20 16" aria-hidden="true">
+        <rect x="0.75" y="0.75" width="18.5" height="14.5" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M6 1h8v1.2A1.8 1.8 0 0 1 12.2 4H7.8A1.8 1.8 0 0 1 6 2.2z" fill="currentColor"/>
+      </svg>
+      <h1>island</h1>
+      <span class="ver" id="version"></span>
+    </header>
 
-  <h2>Look</h2>
-  <div class="card">
-    <div class="row">
-      <span class="label">Background</span>
-      <div class="seg" id="bg">
-        <button data-glass="true">Glass</button>
-        <button data-glass="false">Solid</button>
+    <h2>Look</h2>
+    <div class="card">
+      <div class="row">
+        <div class="text">
+          <div>Background</div>
+          <div class="desc" id="glassNote"></div>
+        </div>
+        <div class="seg" id="bg">
+          <button data-glass="true">Glass</button>
+          <button data-glass="false">Solid</button>
+        </div>
+      </div>
+      <div class="row stack" id="transRow">
+        <div class="line"><span>Transparency</span><span class="value" id="transValue"></span></div>
+        <input type="range" id="transparency" min="0" max="100" step="1" aria-label="Transparency">
+      </div>
+      <div class="row stack">
+        <div class="line"><span>Song color</span><span class="value" id="songValue"></span></div>
+        <input type="range" id="songColor" min="0" max="100" step="1" aria-label="Song color">
       </div>
     </div>
-    <div class="row stack" id="glassNoteRow" hidden>
-      <span class="note" id="glassNote"></span>
+
+    <h2>Behavior</h2>
+    <div class="card">
+      <div class="row stack">
+        <div class="line"><span>Open delay</span><span class="value" id="openValue"></span></div>
+        <input type="range" id="openDelay" min="0" max="600" step="10" aria-label="Open delay">
+      </div>
+      <div class="row stack">
+        <div class="line"><span>Close delay</span><span class="value" id="closeValue"></span></div>
+        <input type="range" id="closeDelay" min="0" max="1000" step="10" aria-label="Close delay">
+      </div>
+      <div class="row">
+        <span class="text">Start with Windows</span>
+        <span class="state" id="startupState"></span>
+        <button class="switch" id="startup" role="switch" aria-label="Start with Windows"></button>
+      </div>
+      <div class="row">
+        <span class="text">Always show icon on taskbar</span>
+        <span class="state" id="trayShownState"></span>
+        <button class="switch" id="trayShown" role="switch" aria-label="Always show icon on taskbar"></button>
+      </div>
     </div>
-    <div class="row stack" id="transRow">
-      <div class="line"><span class="label">Transparency</span><span class="value" id="transValue"></span></div>
-      <input type="range" id="transparency" min="0" max="100" step="1">
-    </div>
-    <div class="row stack">
-      <div class="line"><span class="label">Song color</span><span class="value" id="songValue"></span></div>
-      <input type="range" id="songColor" min="0" max="100" step="1">
+
+    <h2>Shelf</h2>
+    <div class="card">
+      <div class="row">
+        <div class="text">
+          <div id="shelfTitle">Shelf is empty</div>
+          <div class="desc">Drop files on the island to keep them close. Scroll on the island to see them.</div>
+        </div>
+        <button class="btn" id="shelfClear">Clear</button>
+      </div>
     </div>
   </div>
 
-  <h2>Behavior</h2>
-  <div class="card">
-    <div class="row stack">
-      <div class="line"><span class="label">Open delay</span><span class="value" id="openValue"></span></div>
-      <input type="range" id="openDelay" min="0" max="600" step="10">
-    </div>
-    <div class="row stack">
-      <div class="line"><span class="label">Close delay</span><span class="value" id="closeValue"></span></div>
-      <input type="range" id="closeDelay" min="0" max="1000" step="10">
-    </div>
-    <div class="row">
-      <span class="label">Start with Windows</span>
-      <button class="toggle" id="startup" role="switch"></button>
-    </div>
-    <div class="row">
-      <span class="label">Always show icon on taskbar</span>
-      <button class="toggle" id="trayShown" role="switch"></button>
-    </div>
-  </div>
-
-  <footer>
-    <button id="pin">Pin island open</button>
-    <button id="quit">Quit</button>
+  <footer id="foot">
+    <button class="subtle" id="pin" title="Pin island open (Ctrl+Alt+I)">
+      <svg viewBox="0 0 16 16"><path d="M10.06 1.94a1 1 0 0 0-1.6.27L6.9 5.33l-2.68.9a.75.75 0 0 0-.3 1.24l4.6 4.6a.75.75 0 0 0 1.24-.3l.9-2.68 3.12-1.56a1 1 0 0 0 .26-1.6zM6.2 9.8 2.5 13.5"/></svg>
+      <span id="pinLabel">Pin open</span>
+    </button>
+    <span class="spacer"></span>
+    <button class="subtle" id="quit" title="Quit island (Ctrl+Alt+Q)">
+      <svg viewBox="0 0 16 16"><path d="M8 2v5.5M4.6 4.2a5 5 0 1 0 6.8 0"/></svg>
+      <span>Quit</span>
+    </button>
   </footer>
-</main>
+</div>
 <script>
   const $ = (id) => document.getElementById(id);
   let state = null;
@@ -190,21 +259,38 @@
     input.style.setProperty('--pct', pct + '%');
   }
 
+  function setSwitch(id, on) {
+    $(id).classList.toggle('on', on);
+    $(id).setAttribute('aria-checked', String(on));
+    $(id + 'State').textContent = on ? 'On' : 'Off';
+  }
+
+  // Natural height of the page (not of the window), so main can size the
+  // flyout before it shows and the size never feeds back into itself.
+  function reportSize() {
+    window.settings.resize($('scroll').scrollHeight + $('foot').offsetHeight);
+  }
+
   function render(p) {
     state = p;
     document.documentElement.style.setProperty('--accent', p.accent);
     const v = p.values;
     const glassAvailable = p.windowsTransparency && !p.forceSolid;
     const glassOn = v.glass && glassAvailable;
-    for (const b of $('bg').children) b.classList.toggle('on', (b.dataset.glass === 'true') === glassOn);
-    $('bg').parentElement.classList.toggle('disabled', !glassAvailable);
-    // Explain why glass is unavailable, or what glass costs.
-    $('glassNoteRow').hidden = glassAvailable && !glassOn;
+    for (const b of $('bg').children) {
+      const on = (b.dataset.glass === 'true') === glassOn;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
+    }
+    $('bg').classList.toggle('disabled', !glassAvailable);
+    // Always one line of explanation, so switching never changes the height.
     $('glassNote').textContent = !p.windowsTransparency
-      ? 'Transparency effects are off in Windows settings, so the island is solid.'
+      ? 'Transparency effects are off in Windows, so the island is solid.'
       : p.forceSolid
         ? 'Started with --solid.'
-        : 'Glass hides the island from screenshots and recordings. Switch to Solid to record it.';
+        : glassOn
+          ? 'Hidden from screenshots and recordings. Use Solid to record it.'
+          : 'Shows in screenshots and recordings.';
     $('transRow').classList.toggle('disabled', !glassOn);
     for (const [id, valueId, fmt] of sliders) {
       const input = $(id);
@@ -212,13 +298,15 @@
       $(valueId).textContent = fmt(Number(input.value));
       paintSlider(input);
     }
-    $('startup').classList.toggle('on', p.startWithWindows);
-    $('startup').setAttribute('aria-checked', String(p.startWithWindows));
-    $('trayShown').classList.toggle('on', p.trayShown);
-    $('trayShown').setAttribute('aria-checked', String(p.trayShown));
-    $('pin').textContent = p.pinned ? 'Unpin island' : 'Pin island open';
-    $('pin').classList.toggle('primary', p.pinned);
-    requestAnimationFrame(() => window.settings.resize(document.documentElement.scrollHeight));
+    setSwitch('startup', p.startWithWindows);
+    setSwitch('trayShown', p.trayShown);
+    $('pinLabel').textContent = p.pinned ? 'Unpin' : 'Pin open';
+    $('pin').classList.toggle('on', p.pinned);
+    const n = p.shelfCount || 0;
+    $('shelfTitle').textContent = n ? `${n} ${n === 1 ? 'file' : 'files'} on the shelf` : 'Shelf is empty';
+    $('shelfClear').disabled = !n;
+    $('version').textContent = p.version ? `v${p.version}` : '';
+    reportSize();
   }
 
   for (const [id, valueId, fmt] of sliders) {
@@ -238,17 +326,16 @@
   $('trayShown').addEventListener('click', () => {
     window.settings.action(state && state.trayShown ? 'tray-shown-off' : 'tray-shown-on');
   });
+  $('shelfClear').addEventListener('click', () => window.settings.action('shelf-clear'));
   $('pin').addEventListener('click', () => window.settings.action('pin'));
   $('quit').addEventListener('click', () => window.settings.action('quit'));
   addEventListener('keydown', (e) => { if (e.key === 'Escape') window.settings.action('hide'); });
 
   window.settings.onUpdate(render);
-  window.settings.onShown(() => {
-    document.body.classList.remove('shown');
-    void document.body.offsetWidth;
-    document.body.classList.add('shown');
-  });
+  window.settings.onShown(() => document.body.classList.add('shown'));
+  window.settings.onHiding(() => document.body.classList.remove('shown'));
   window.settings.get().then(render);
+  document.fonts.ready.then(reportSize);
 </script>
 </body>
 </html>

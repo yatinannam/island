@@ -37,12 +37,17 @@ const LEAVE_PAD = 10;       // tolerance around the shape before leaving counts
 const TICK_MS = 16;
 // Open delay (dwell on the hot zone) and close delay come from settings.
 
-const SETTINGS_W = 340;
+// Settings flyout: as wide as Windows' Quick Settings, and placed like it.
+const SETTINGS_W = 360;
+const SETTINGS_MARGIN = 12;     // gap to the screen edge and the taskbar
+const SETTINGS_FADE_OUT_MS = 120;
 
 let win = null;
 let settingsWin = null;
 let settingsHiddenAt = 0;
 let settingsShownAt = 0;
+let settingsH = 600;            // content height the flyout page asked for
+let settingsHideTimer = null;
 let tray = null;
 let ready = false;
 let isOpen = false;
@@ -335,6 +340,8 @@ function settingsPayload() {
     forceSolid,
     pinned: isOpen && pinned && !previewing,
     accent,
+    shelfCount: shelf.items.length,
+    version: app.getVersion(),
   };
 }
 
@@ -345,7 +352,10 @@ function sendSettings() {
 function createSettingsWindow() {
   settingsWin = new BrowserWindow({
     width: SETTINGS_W,
-    height: 400,
+    height: settingsH,
+    // Sizes are the page's size. Sizing the outer frame made the flyout grow
+    // a few px on every open at 125% scaling.
+    useContentSize: true,
     frame: false,
     resizable: false,
     movable: false,
@@ -364,17 +374,29 @@ function createSettingsWindow() {
   settingsWin.on('blur', () => { if (Date.now() - settingsShownAt > 400) hideSettings(); });
 }
 
-// Above the tray icon, inside the work area, like Windows' own flyouts.
+// Like Windows' own tray flyouts (Quick Settings, notifications): in the
+// corner of the work area on the tray's side, 12 px from the screen edge and
+// the taskbar. Taller than the work area: the page scrolls.
 function placeSettings() {
+  if (!tray || !settingsWin || settingsWin.isDestroyed()) return;
   const icon = tray.getBounds();
   const center = { x: icon.x + icon.width / 2, y: icon.y + icon.height / 2 };
   const work = screen.getDisplayNearestPoint(center).workArea;
-  const [w, h] = settingsWin.getSize();
-  const margin = 12;
-  const x = Math.round(Math.min(Math.max(center.x - w / 2, work.x + margin), work.x + work.width - w - margin));
+  const m = SETTINGS_MARGIN;
+  const w = SETTINGS_W;
+  const h = Math.round(Math.min(settingsH, work.height - m * 2));
+  const right = center.x >= work.x + work.width / 2;
   const below = center.y < work.y + work.height / 2; // taskbar at the top
-  const y = below ? work.y + margin : work.y + work.height - h - margin;
-  settingsWin.setPosition(x, Math.round(y));
+  const b = {
+    x: Math.round(right ? work.x + work.width - w - m : work.x + m),
+    y: Math.round(below ? work.y + m : work.y + work.height - h - m),
+    width: w,
+    height: h,
+  };
+  const now = settingsWin.getContentBounds();
+  if (b.x !== now.x || b.y !== now.y || b.width !== now.width || b.height !== now.height) {
+    settingsWin.setContentBounds(b);
+  }
 }
 
 // Whether the tray icon is on the taskbar; the user can also change it in
@@ -387,6 +409,8 @@ async function refreshTrayShown() {
 
 function showSettings() {
   if (!settingsWin || settingsWin.isDestroyed()) createSettingsWindow();
+  clearTimeout(settingsHideTimer); // shown again while fading out
+  settingsHideTimer = null;
   refreshTrayShown();
   sendSettings();
   placeSettings();
@@ -397,11 +421,18 @@ function showSettings() {
   log('settings shown at', settingsWin.getBounds(), 'tray', tray.getBounds(), 'focused', settingsWin.isFocused());
 }
 
+// The page fades its content out before the window hides. Windows shows a
+// window's last frame when it comes back, so the next open starts from the
+// empty panel and fades the content in, like Windows' own flyouts.
 function hideSettings() {
-  if (!settingsWin || settingsWin.isDestroyed() || !settingsWin.isVisible()) return;
+  if (!settingsWin || settingsWin.isDestroyed() || !settingsWin.isVisible() || settingsHideTimer) return;
   log('settings hidden');
-  settingsWin.hide();
   settingsHiddenAt = Date.now();
+  settingsWin.webContents.send('settings-hiding');
+  settingsHideTimer = setTimeout(() => {
+    settingsHideTimer = null;
+    if (settingsWin && !settingsWin.isDestroyed()) settingsWin.hide();
+  }, SETTINGS_FADE_OUT_MS);
   if (previewing) closeIsland();
 }
 
@@ -521,6 +552,7 @@ async function sendShelf() {
 shelf.on('change', () => {
   for (const p of thumbs.keys()) if (!shelf.items.some((i) => i.path === p)) thumbs.delete(p);
   sendShelf();
+  sendSettings(); // file count in the flyout
 });
 
 ipcMain.on('shape-size', (_e, h) => {
@@ -580,16 +612,18 @@ ipcMain.on('settings-action', (_e, action) => {
     sendSettings();
   } else if (action === 'tray-shown-on' || action === 'tray-shown-off') {
     setPromoted(TRAY_GUID, action.endsWith('-on')).then(refreshTrayShown);
+  } else if (action === 'shelf-clear') {
+    shelf.clear();
   }
 });
 
+// The page reports its natural height (not the window's), so this settles
+// instead of feeding back. Placed while hidden too, so it opens already sized.
 ipcMain.on('settings-size', (_e, h) => {
-  if (!settingsWin || settingsWin.isDestroyed()) return;
-  const height = Math.round(Math.min(Math.max(Number(h) || 400, 200), 800));
-  if (settingsWin.getSize()[1] !== height) {
-    settingsWin.setSize(SETTINGS_W, height);
-    if (settingsWin.isVisible()) placeSettings();
-  }
+  const v = Math.round(Number(h));
+  if (!Number.isFinite(v) || v === settingsH) return;
+  settingsH = Math.min(Math.max(v, 200), 1200);
+  placeSettings();
 });
 
 media.on('state', (s) => {
