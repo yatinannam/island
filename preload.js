@@ -11,4 +11,5 @@ contextBridge.exposeInMainWorld('island', {
   onArt: listen('media-art'),
   media: (cmd) => ipcRenderer.send('media-cmd', String(cmd)),
   debug: (msg) => ipcRenderer.send('debug', String(msg)),
+  hold: (on) => ipcRenderer.send('hold', !!on),
 });

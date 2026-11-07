@@ -147,11 +147,13 @@
     width: 34px; flex: none;
   }
   .t.end { text-align: right; }
+  /* Taller invisible grab area around the thin bar, so it's easy to hit and drag */
+  .scrub { flex: 1; height: 22px; margin: -4px 0; display: flex; align-items: center; touch-action: none; }
   .bar {
-    flex: 1; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden;
+    flex: 1; height: 4px; border-radius: 3px; background: var(--track); overflow: hidden;
     transition: height 120ms ease;
   }
-  .seekable .bar:hover { height: 6px; }
+  .seekable .scrub:hover .bar, .scrubbing .bar { height: 6px; }
   .bar i {
     display: block; height: 100%; width: 100%; border-radius: 2px; background: var(--fill);
     transform-origin: 0 50%; transform: scaleX(0);
@@ -193,19 +195,20 @@
         </div>
         <div class="progress">
           <span class="t" id="elapsed">0:00</span>
-          <div class="bar" id="bar"><i id="fill"></i></div>
+          <div class="scrub" id="scrub"><div class="bar" id="bar"><i id="fill"></i></div></div>
           <span class="t end" id="remaining">-0:00</span>
         </div>
         <div class="controls">
           <button id="prev" title="Previous" disabled>
-            <svg viewBox="0 0 24 24"><path d="M21 6.5 12.5 12 21 17.5Z M12 6.5 3.5 12 12 17.5Z"/></svg>
+            <!-- Mirror of #next; both shifted so their visual weight, not their box, sits on the circle's center -->
+            <svg viewBox="0 0 24 24"><path d="M19.9 6.5 11.4 12 19.9 17.5Z M10.9 6.5 2.4 12 10.9 17.5Z"/></svg>
           </button>
           <button id="play" title="Play/Pause" disabled>
             <svg class="icon-play" viewBox="0 0 24 24"><path d="M7.5 5.5 19 12 7.5 18.5Z"/></svg>
             <svg class="icon-pause" viewBox="0 0 24 24" stroke="none"><rect x="6" y="5" width="4.2" height="14" rx="1.3"/><rect x="13.8" y="5" width="4.2" height="14" rx="1.3"/></svg>
           </button>
           <button id="next" title="Next" disabled>
-            <svg viewBox="0 0 24 24"><path d="M3 6.5 11.5 12 3 17.5Z M12 6.5 20.5 12 12 17.5Z"/></svg>
+            <svg viewBox="0 0 24 24"><path d="M4.1 6.5 12.6 12 4.1 17.5Z M13.1 6.5 21.6 12 13.1 17.5Z"/></svg>
           </button>
         </div>
       </div>
@@ -553,9 +556,12 @@
     return Math.min(Math.max(p, 0), media.duration);
   }
 
+  let scrubMs = null;   // position under the pointer while dragging the bar
+  let seekedAt = 0;     // last seek, to ignore stale positions the app reports right after
+
   function renderProgress() {
     const dur = media.none ? 0 : media.duration || 0;
-    const pos = positionNow();
+    const pos = scrubMs !== null ? scrubMs : positionNow();
     $('fill').style.transform = `scaleX(${dur ? pos / dur : 0})`;
     $('elapsed').textContent = fmt(pos);
     $('remaining').textContent = '-' + fmt(dur - pos);
@@ -669,7 +675,14 @@
   }
 
   function onMediaState(s) {
-    media = s || { none: true };
+    const next = s || { none: true };
+    // Right after a seek, apps can still report the old position once;
+    // keep ours for the same track so the bar doesn't jump back.
+    if (Date.now() - seekedAt < 1500 && !next.none && !media.none && next.title === media.title) {
+      next.position = media.position;
+      next.updatedAt = media.updatedAt;
+    }
+    media = next;
     mediaAt = Date.now();
     renderMedia();
   }
@@ -725,14 +738,38 @@
   });
   $('next').addEventListener('click', () => window.island.media('next'));
   $('prev').addEventListener('click', () => window.island.media('prev'));
-  $('bar').addEventListener('click', (e) => {
-    if (!body.classList.contains('seekable')) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const ms = Math.round(((e.clientX - rect.left) / rect.width) * media.duration);
-    media = { ...media, position: ms, updatedAt: Date.now() };
+  // Click or drag anywhere on the bar's grab area; seek on release.
+  const scrub = $('scrub');
+  function scrubTo(e) {
+    const r = $('bar').getBoundingClientRect();
+    const f = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    scrubMs = Math.round(f * media.duration);
     renderProgress();
-    window.island.media(`seek ${ms}`);
+  }
+  function endScrub(commit) {
+    if (scrubMs === null) return;
+    const ms = scrubMs;
+    scrubMs = null;
+    body.classList.remove('scrubbing');
+    window.island.hold(false);
+    if (commit) {
+      seekedAt = Date.now();
+      media = { ...media, position: ms, updatedAt: Date.now() };
+      window.island.media(`seek ${ms}`);
+    }
+    renderProgress();
+  }
+  scrub.addEventListener('pointerdown', (e) => {
+    if (!body.classList.contains('seekable') || e.button !== 0) return;
+    scrub.setPointerCapture(e.pointerId);
+    body.classList.add('scrubbing');
+    window.island.hold(true); // stay open even if the drag leaves the island
+    scrubTo(e);
   });
+  scrub.addEventListener('pointermove', (e) => { if (scrubMs !== null) scrubTo(e); });
+  scrub.addEventListener('pointerup', () => endScrub(true));
+  scrub.addEventListener('pointercancel', () => endScrub(false));
+  scrub.addEventListener('lostpointercapture', () => endScrub(true));
 
   addEventListener('resize', () => { sizeCanvas(); kick(); });
   sizeCanvas();

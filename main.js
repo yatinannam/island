@@ -192,6 +192,7 @@ function createWindow() {
   win.loadFile('island.html');
   win.webContents.once('did-finish-load', () => {
     ready = true;
+    if (process.env.ISLAND_CSS) win.webContents.insertCSS(process.env.ISLAND_CSS); // dev: style overrides for screenshots
     if (process.argv.includes('--open')) {
       pinned = true;
       openIsland(screen.getPrimaryDisplay());
@@ -232,6 +233,7 @@ function closeIsland() {
   isOpen = false;
   pinned = false;
   previewing = false;
+  held = false;
   send('island-state', 'closed');
   // The window stays where it is, fully transparent and click-through.
   // Hiding it, or moving it off-screen, after a click made Electron stop
@@ -268,9 +270,13 @@ function overShape(p, d) {
   return p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height;
 }
 
+// True while the progress bar is being dragged: keep the island open and
+// taking the mouse even if the drag wanders outside it.
+let held = false;
+
 function tick() {
   const p = screen.getCursorScreenPoint();
-  setMouse(isOpen && overShape(p, current));
+  setMouse(isOpen && (held || overShape(p, current)));
   if (!isOpen) {
     const d = displayAt(p);
     if (!inHotZone(p, d)) {
@@ -285,7 +291,7 @@ function tick() {
     return;
   }
   if (pinned) return;
-  if (inShape(p, current)) {
+  if (held || inShape(p, current)) {
     leaveSince = 0;
   } else if (!leaveSince) {
     leaveSince = Date.now();
@@ -451,6 +457,11 @@ function registerShortcut(accel, fn) {
 // ---- IPC -------------------------------------------------------------------
 
 ipcMain.on('debug', (_e, msg) => log('renderer:', String(msg)));
+
+ipcMain.on('hold', (_e, on) => {
+  held = !!on && isOpen;
+  log('hold', held);
+});
 
 ipcMain.on('media-cmd', (_e, cmd) => {
   log('media-cmd', cmd);
