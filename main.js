@@ -541,7 +541,7 @@ ipcMain.on('shelf-clear', () => shelf.clear());
 
 ipcMain.on('shelf-open', (_e, id) => {
   const item = shelf.get(String(id));
-  if (item) shell.openPath(item.path);
+  if (item) shell.openPath(item.path).then((err) => log('shelf open', item.name, err || 'ok'));
 });
 
 // Drag files out of the shelf into any app or folder. Windows decides copy

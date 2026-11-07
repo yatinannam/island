@@ -48,7 +48,7 @@ Works with anything that shows up in the Windows media flyout: Spotify, browsers
 
 ## File shelf
 
-A place to park files for a moment, on the island's second page. Scroll on the island (or click the dots at its top) to roll between Music and Shelf; the shelf dot shows how many files are waiting. Drag files (or folders, or an image out of a browser) to the top edge: the island opens, switches to the Shelf page, and dropping adds them. Drag a file back out into any app or folder, or use the "drag all" button for everything at once. Double-click opens a file, × removes it from the shelf.
+A place to park files for a moment, on the island's second page. Scroll on the island (or click the dots at its top) to roll between Music and Shelf; the shelf dot shows how many files are waiting. Drag files (or folders, or an image out of a browser) to the top edge: the island opens, switches to the Shelf page, and dropping adds them. Drag a file back out into any app or folder, or use the "drag all" button for everything at once. Double-click opens a file, × removes it from the shelf. To take only some files: long-press one (or Ctrl+click), tick the others, then drag any ticked file and they all go together; Done stops selecting.
 
 The shelf holds references to your files, not copies, so big files cost nothing. Dragging out works like dragging from Explorer: Windows picks copy or move depending on where you drop (hold Ctrl to copy). If a file gets moved away, it leaves the shelf. Things with no file on disk, like a browser image, are saved under `%APPDATA%\island\shelf-files`. The shelf survives restarts (`shelf.json`).
 

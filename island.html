@@ -234,6 +234,27 @@
   .shelf-actions { display: flex; gap: 2px; flex: none; transition: opacity 120ms; }
   /* The button reset (all: unset) also clears Chromium's drag setting; without this "drag all" never starts a drag */
   #dragAll { -webkit-user-drag: element; }
+
+  /* Multi-select: long press a file (or Ctrl+click) to tick files, then drag any ticked one */
+  .tile .check {
+    position: absolute; top: 3px; left: 5px; width: 15px; height: 15px; box-sizing: border-box;
+    border-radius: 50%; border: 1.5px solid var(--label-2); background: rgba(0, 0, 0, 0.3);
+    display: none; place-items: center; pointer-events: none;
+  }
+  .tile .check svg { width: 9px; height: 9px; fill: none; stroke: rgba(0, 0, 0, 0.85); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; opacity: 0; }
+  body.light .tile .check svg { stroke: #fff; }
+  .selecting .tile .check { display: grid; }
+  .tile.sel .check { background: var(--fill); border-color: var(--fill); }
+  .tile.sel .check svg { opacity: 1; }
+  .selecting .tile.sel { background: var(--hover); }
+  .selecting .tile .x { display: none; }
+  .done { display: none; }
+  .selecting .done {
+    display: grid; width: auto; height: 22px; padding: 0 10px; border-radius: 11px;
+    background: var(--hover); font-size: 12px; font-weight: 600; color: var(--label);
+  }
+  .selecting .done:hover { background: var(--press); }
+  .selecting .shelf-actions { display: none; }
   .shelf-actions button { width: 28px; height: 28px; color: var(--label-2); }
   .shelf-actions button:hover { color: var(--label); }
   .shelf-actions svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
@@ -301,6 +322,7 @@
         <div class="shelf" id="shelf">
           <div class="shelf-head">
             <strong>Shelf</strong><span id="shelfCount">empty</span>
+            <button class="done" id="doneSelect" title="Stop selecting">Done</button>
             <div class="shelf-actions">
               <button id="dragAll" title="Drag all files out" draggable="true">
                 <svg viewBox="0 0 24 24"><rect x="4" y="8" width="12" height="12" rx="2.5"/><path d="M8 5.5V5a1 1 0 0 1 1-1h9a2 2 0 0 1 2 2v9a1 1 0 0 1-1 1h-.5"/></svg>
@@ -829,6 +851,7 @@
       clearInterval(progressTimer);
       dragDepth = 0;
       setDragOver(false); // a drag that left without a dragleave
+      setSelecting(false);
       kick();
       // Keep capturing briefly so a quick re-open is instant.
       clearTimeout(stopTimer);
@@ -899,8 +922,8 @@
   function updateShelfSize() {
     window.island.shapeSize(SHAPE_H);
     body.classList.toggle('shelf-empty', shelfItems.length === 0);
-    $('shelfCount').textContent = shelfItems.length
-      ? `${shelfItems.length} ${shelfItems.length === 1 ? 'file' : 'files'}` : 'empty';
+    $('shelfCount').textContent = selecting ? `${selected.size} selected`
+      : shelfItems.length ? `${shelfItems.length} ${shelfItems.length === 1 ? 'file' : 'files'}` : 'empty';
     renderDots();
   }
 
@@ -972,13 +995,90 @@
       x.innerHTML = '<svg viewBox="0 0 10 10"><path d="M2 2l6 6M8 2 2 8"/></svg>';
       x.addEventListener('click', (e) => { e.stopPropagation(); window.island.shelfRemove(item.id); });
       x.addEventListener('dblclick', (e) => e.stopPropagation());
+      x.addEventListener('pointerdown', (e) => e.stopPropagation()); // pressing the x is not a long press
       tile.append(x);
-      tile.addEventListener('dblclick', () => window.island.shelfOpen(item.id));
-      tile.addEventListener('dragstart', (e) => startDragOut(e, [item.id]));
+      const check = document.createElement('i');
+      check.className = 'check';
+      check.innerHTML = '<svg viewBox="0 0 12 12"><path d="M2.5 6.2 5 8.6l4.5-5"/></svg>';
+      tile.append(check);
+      tile.classList.toggle('sel', selected.has(item.id));
+      wireTile(tile, item.id);
       tiles.append(tile);
     }
+    // Forget ticks on files that left the shelf.
+    for (const id of [...selected]) if (!shelfItems.some((i) => i.id === id)) selected.delete(id);
+    if (selecting && !shelfItems.length) setSelecting(false);
     updateShelfSize();
   }
+
+  // ===== Multi-select ========================================================
+  // Long press a file (hold still ~0.4s) or Ctrl+click to start ticking files;
+  // click to tick/untick; dragging a ticked file takes all ticked files.
+  // Moving before the long press fires is a normal drag of that one file.
+
+  const LONG_PRESS_MS = 400;
+  let selecting = false;
+  const selected = new Set();
+  let pressTimer = 0, pressStart = null, suppressClick = false;
+
+  function setSelecting(on) {
+    selecting = on;
+    if (!on) selected.clear();
+    body.classList.toggle('selecting', on);
+    refreshSelection();
+  }
+
+  function refreshSelection() {
+    for (const tile of $('tiles').children) tile.classList.toggle('sel', selected.has(tile.dataset.id));
+    updateShelfSize();
+  }
+
+  function toggleSelected(id) {
+    if (selected.has(id)) selected.delete(id);
+    else selected.add(id);
+    refreshSelection();
+  }
+
+  function wireTile(tile, id) {
+    tile.dataset.id = id;
+    const cancelPress = () => { clearTimeout(pressTimer); pressStart = null; };
+    tile.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      suppressClick = false;
+      pressStart = { x: e.clientX, y: e.clientY };
+      clearTimeout(pressTimer);
+      pressTimer = setTimeout(() => {
+        pressStart = null;
+        suppressClick = true; // the click that ends this press must not untick it
+        if (!selecting) setSelecting(true);
+        selected.add(id);
+        refreshSelection();
+      }, LONG_PRESS_MS);
+    });
+    tile.addEventListener('pointermove', (e) => {
+      if (pressStart && Math.hypot(e.clientX - pressStart.x, e.clientY - pressStart.y) > 5) cancelPress();
+    });
+    tile.addEventListener('pointerup', cancelPress);
+    tile.addEventListener('pointerleave', cancelPress);
+    tile.addEventListener('pointercancel', cancelPress);
+    tile.addEventListener('click', (e) => {
+      if (suppressClick) { suppressClick = false; return; }
+      if (selecting) toggleSelected(id);
+      else if (e.ctrlKey) { setSelecting(true); toggleSelected(id); }
+    });
+    tile.addEventListener('dblclick', () => { if (!selecting) window.island.shelfOpen(id); });
+    tile.addEventListener('dragstart', (e) => {
+      cancelPress();
+      suppressClick = false;
+      const ids = selecting && selected.has(id)
+        ? shelfItems.filter((i) => selected.has(i.id)).map((i) => i.id)
+        : [id];
+      startDragOut(e, ids);
+      if (selecting) setSelecting(false);
+    });
+  }
+
+  $('doneSelect').addEventListener('click', () => setSelecting(false));
 
   // Windows runs the actual drag; the page only asks for it.
   function startDragOut(e, ids) {
