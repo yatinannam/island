@@ -37,7 +37,7 @@ Windows 11 app that gives a Mac-style top "island": a glass notch-shaped island 
 
 ## Testing notes
 
-- Driving the settings flyout without touching Yatin's keyboard or mouse: start the dev copy with `--remote-debugging-port=9333`, then evaluate JS in a page over CDP (`http://127.0.0.1:9333/json`, `Runtime.evaluate`; bun has `fetch` and `WebSocket`), e.g. `window.settings.action('hide')`. A relaunch (`electron .`) shows the flyout through `second-instance`. Never leave a dev flyout focused on screen while he works: his keystrokes land in it (Space toggles switches) and settings are shared with the installed app.
+- Driving the settings flyout without touching Yatin's keyboard or mouse: start the dev copy with `--remote-debugging-port=9333`, then evaluate JS in a page over CDP (`http://127.0.0.1:9333/json`, `Runtime.evaluate`; bun has `fetch` and `WebSocket`), e.g. `window.settings.action('hide')`. A relaunch (`electron .`) shows the flyout through `second-instance`. The dev copy shares `settings.json` with the installed app, so a value changed in the dev flyout changes his real settings.
 - Layout previews without any window on screen: a scratch Electron app with `webPreferences: { offscreen: true }` loading `settings.html` with a mock `window.settings`, `capturePage()`, composited over grey. Set `nativeTheme.themeSource` for light/dark; one page load per process (a second `loadFile` in the same process failed with ERR_FAILED).
 
 - `ISLAND_CSS="<css>"` injects CSS into the island page (e.g. force button backgrounds to measure centering from an `ISLAND_SHOT` capture).
