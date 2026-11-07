@@ -10,10 +10,22 @@ A Mac-style island for Windows 11. Rest the cursor on the top-center edge of any
 
 The first run downloads the Electron binary (about 100MB) and compiles the media helper, so it is slow once.
 
-- Ctrl+Alt+I pins the island open (or closes it).
-- Ctrl+Alt+Q quits. The tray icon also has Quit and the glass toggle.
-- `--solid` starts with glass off.
+- Left-click the tray icon for settings. Right-click it for Pin and Quit.
+- Ctrl+Alt+I pins the island open (or closes it). Ctrl+Alt+Q quits.
+- `--solid` starts with glass off. `--settings` opens the settings flyout on start.
 - Set `ISLAND_DEBUG=1` to log open/close events and media helper errors.
+
+## Settings
+
+The tray flyout uses Windows' own acrylic material and your Windows accent color. While you change a look setting, the island stays open so you see the result live.
+
+- **Background:** Glass or Solid.
+- **Transparency:** how much of what's behind shows through the glass.
+- **Song color:** how strongly the artwork's color tints the island, strongest around the cover (0 turns it off). Fades between tracks; works in Solid too.
+- **Open delay / Close delay:** how long the cursor rests on the top edge before it opens, and how long it stays away before it closes.
+- **Start with Windows.**
+
+Settings are saved to `%APPDATA%\island\settings.json`.
 
 ## Music
 
@@ -33,7 +45,7 @@ Two trade-offs:
 ## How it works
 
 - One transparent, always-on-top, non-focusable window sits at the top center of the display under the cursor. It is hidden while the island is closed, so nothing covers fullscreen games or video.
-- The main process polls the cursor every 16ms. Resting in the 240x3px hot zone for 150ms opens the island. Leaving the island for 300ms closes it.
+- The main process polls the cursor every 16ms. Resting in the 240x3px hot zone for the open delay (150ms) opens the island. Leaving it for the close delay (120ms) closes it, with a stiffer spring than the open.
 - The window ignores the mouse except over the island shape itself, so the area around it never blocks clicks.
 - Open and close use a real damped-spring curve, generated at startup and fed to CSS as a `linear()` easing. A canvas paints the notch shape each frame to follow it.
 

@@ -7,12 +7,13 @@
 
 const {
   app, BrowserWindow, screen, globalShortcut, ipcMain, Tray, Menu, nativeImage,
-  desktopCapturer, nativeTheme,
+  desktopCapturer, nativeTheme, systemPreferences,
 } = require('electron');
 const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { MediaHelper } = require('./media/helper');
+const { Settings } = require('./settings');
 
 // Expanded island shape, in DIP. Must match --w / --h in island.html.
 const SHAPE_W = 380;
@@ -26,25 +27,31 @@ const WIN_H = SHAPE_H + PAD_B;
 
 const HOT_W = 240;          // hot zone width, centered on the top edge
 const HOT_H = 3;            // px from the top edge that triggers
-const HOT_DWELL = 150;      // ms the cursor must rest in the hot zone, so passing through to a browser tab doesn't open it
 const LEAVE_PAD = 10;       // tolerance around the shape before leaving counts
-const LEAVE_DELAY = 300;    // ms the cursor must stay outside before closing
-const HIDE_AFTER_CLOSE = 450; // ms for the close animation before hiding the window
+const HIDE_AFTER_CLOSE = 420; // ms for the close animation before hiding the window
 const TICK_MS = 16;
+// Open delay (dwell on the hot zone) and close delay come from settings.
+
+const SETTINGS_W = 340;
 
 let win = null;
+let settingsWin = null;
+let settingsHiddenAt = 0;
+let settingsShownAt = 0;
 let tray = null;
 let ready = false;
 let isOpen = false;
 let pinned = false;
+let previewing = false;     // island held open while the settings flyout is in use
 let leaveSince = 0;
 let hotSince = 0;
 let hideTimer = null;
 let current = null; // display the island is on
 
+const settings = new Settings(app.getPath('userData'));
 // Glass = blurred capture of the screen behind the island. It needs the
 // window excluded from capture, which also hides it from screenshots.
-let glassWanted = !process.argv.includes('--solid');
+let forceSolid = process.argv.includes('--solid');
 let theme = { dark: true, transparency: true };
 const sourceIds = new Map(); // display id -> desktopCapturer source id
 
@@ -101,14 +108,21 @@ function readTheme() {
 }
 
 function config() {
-  return { glass: glassWanted && theme.transparency, dark: theme.dark };
+  const s = settings.values;
+  return {
+    glass: s.glass && !forceSolid && theme.transparency,
+    dark: theme.dark,
+    transparency: s.transparency,
+    songColor: s.songColor,
+  };
 }
 
 function applyConfig() {
   if (!win || win.isDestroyed()) return;
   win.setContentProtection(config().glass);
   send('config', config());
-  updateTrayMenu();
+  if (isOpen && config().glass) sendCapture(current); // switched to glass while open
+  sendSettings();
 }
 
 async function refreshTheme() {
@@ -204,6 +218,7 @@ function closeIsland() {
   if (!isOpen) return;
   isOpen = false;
   pinned = false;
+  previewing = false;
   send('island-state', 'closed');
   win.setIgnoreMouseEvents(true, { forward: true });
   clearTimeout(hideTimer);
@@ -231,7 +246,7 @@ function tick() {
       hotSince = 0;
     } else if (!hotSince) {
       hotSince = Date.now();
-    } else if (Date.now() - hotSince >= HOT_DWELL) {
+    } else if (Date.now() - hotSince >= settings.values.openDelay) {
       hotSince = 0;
       log('open: cursor', p, 'display', d.bounds, 'scale', d.scaleFactor);
       openIsland(d);
@@ -243,7 +258,7 @@ function tick() {
     leaveSince = 0;
   } else if (!leaveSince) {
     leaveSince = Date.now();
-  } else if (Date.now() - leaveSince > LEAVE_DELAY) {
+  } else if (Date.now() - leaveSince > settings.values.closeDelay) {
     log('close: cursor', p, 'shape', shapeRect(current));
     closeIsland();
   }
@@ -256,6 +271,99 @@ function togglePinned() {
     pinned = true;
     openIsland(displayAt(screen.getCursorScreenPoint()));
   }
+}
+
+// ---- settings flyout --------------------------------------------------------
+
+function loginItem() {
+  // In development the app runs as electron.exe <project dir>.
+  return { path: process.execPath, args: app.isPackaged ? [] : [app.getAppPath()] };
+}
+
+function settingsPayload() {
+  let accent = '#0078d4';
+  try { accent = '#' + systemPreferences.getAccentColor().slice(0, 6); } catch {}
+  return {
+    values: settings.values,
+    startWithWindows: app.getLoginItemSettings(loginItem()).openAtLogin,
+    windowsTransparency: theme.transparency,
+    forceSolid,
+    pinned: isOpen && pinned && !previewing,
+    accent,
+  };
+}
+
+function sendSettings() {
+  if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send('settings', settingsPayload());
+}
+
+function createSettingsWindow() {
+  settingsWin = new BrowserWindow({
+    width: SETTINGS_W,
+    height: 400,
+    frame: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    show: false,
+    backgroundMaterial: 'acrylic',   // same material as Windows' own tray flyouts
+    backgroundColor: '#00000000',
+    webPreferences: { preload: path.join(__dirname, 'settings-preload.js') },
+  });
+  settingsWin.loadFile('settings.html');
+  // Closing the tray overflow popup can blur us right after showing; ignore that.
+  settingsWin.on('blur', () => { if (Date.now() - settingsShownAt > 400) hideSettings(); });
+}
+
+// Above the tray icon, inside the work area, like Windows' own flyouts.
+function placeSettings() {
+  const icon = tray.getBounds();
+  const center = { x: icon.x + icon.width / 2, y: icon.y + icon.height / 2 };
+  const work = screen.getDisplayNearestPoint(center).workArea;
+  const [w, h] = settingsWin.getSize();
+  const margin = 12;
+  const x = Math.round(Math.min(Math.max(center.x - w / 2, work.x + margin), work.x + work.width - w - margin));
+  const below = center.y < work.y + work.height / 2; // taskbar at the top
+  const y = below ? work.y + margin : work.y + work.height - h - margin;
+  settingsWin.setPosition(x, Math.round(y));
+}
+
+function showSettings() {
+  if (!settingsWin || settingsWin.isDestroyed()) createSettingsWindow();
+  sendSettings();
+  placeSettings();
+  settingsShownAt = Date.now();
+  settingsWin.show();
+  settingsWin.focus();
+  settingsWin.webContents.send('settings-shown');
+  log('settings shown at', settingsWin.getBounds(), 'tray', tray.getBounds(), 'focused', settingsWin.isFocused());
+}
+
+function hideSettings() {
+  if (!settingsWin || settingsWin.isDestroyed() || !settingsWin.isVisible()) return;
+  log('settings hidden');
+  settingsWin.hide();
+  settingsHiddenAt = Date.now();
+  if (previewing) closeIsland();
+}
+
+function toggleSettings() {
+  // Clicking the tray icon blurs the flyout first; don't reopen it right away.
+  if (Date.now() - settingsHiddenAt < 300) return;
+  if (settingsWin && !settingsWin.isDestroyed() && settingsWin.isVisible()) hideSettings();
+  else showSettings();
+}
+
+// Hold the island open on the primary display so look changes show live.
+function preview() {
+  if (isOpen) return;
+  pinned = true;
+  openIsland(screen.getPrimaryDisplay());
+  previewing = true;
 }
 
 // ---- tray ------------------------------------------------------------------
@@ -279,26 +387,18 @@ function trayIcon() {
   return nativeImage.createFromBitmap(buf, { width: s, height: s });
 }
 
-function updateTrayMenu() {
-  if (!tray) return;
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Pin island open (Ctrl+Alt+I)', click: togglePinned },
-    {
-      label: 'Glass background (hidden from screenshots)',
-      type: 'checkbox',
-      checked: glassWanted,
-      enabled: theme.transparency,
-      click: (item) => { glassWanted = item.checked; applyConfig(); },
-    },
-    { type: 'separator' },
-    { label: 'Quit (Ctrl+Alt+Q)', click: () => app.quit() },
-  ]));
-}
-
 function createTray() {
   tray = new Tray(trayIcon());
   tray.setToolTip('island');
-  updateTrayMenu();
+  // Left click: settings flyout. Right click: menu.
+  tray.on('click', toggleSettings);
+  const menu = Menu.buildFromTemplate([
+    { label: 'Settings', click: showSettings },
+    { label: 'Pin island open (Ctrl+Alt+I)', click: togglePinned },
+    { type: 'separator' },
+    { label: 'Quit (Ctrl+Alt+Q)', click: () => app.quit() },
+  ]);
+  tray.on('right-click', () => tray.popUpContextMenu(menu));
 }
 
 function registerShortcut(accel, fn) {
@@ -319,6 +419,38 @@ ipcMain.on('media-cmd', (_e, cmd) => media.command(String(cmd)));
 
 ipcMain.handle('snapshot', () => ({ config: config(), media: media.state, art: media.art }));
 
+ipcMain.handle('settings-get', () => settingsPayload());
+
+ipcMain.on('settings-set', (_e, patch) => {
+  if (!patch || typeof patch !== 'object') return;
+  const looks = ['glass', 'transparency', 'songColor'].some((k) => k in patch);
+  settings.update(patch);
+  if (looks) preview();
+  applyConfig();
+});
+
+ipcMain.on('settings-action', (_e, action) => {
+  if (action === 'quit') app.quit();
+  else if (action === 'hide') hideSettings();
+  else if (action === 'pin') {
+    if (previewing) { previewing = false; pinned = true; } // keep the preview open for good
+    else togglePinned();
+    sendSettings();
+  } else if (action === 'start-with-windows-on' || action === 'start-with-windows-off') {
+    app.setLoginItemSettings({ ...loginItem(), openAtLogin: action.endsWith('-on') });
+    sendSettings();
+  }
+});
+
+ipcMain.on('settings-size', (_e, h) => {
+  if (!settingsWin || settingsWin.isDestroyed()) return;
+  const height = Math.round(Math.min(Math.max(Number(h) || 400, 200), 800));
+  if (settingsWin.getSize()[1] !== height) {
+    settingsWin.setSize(SETTINGS_W, height);
+    if (settingsWin.isVisible()) placeSettings();
+  }
+});
+
 media.on('state', (s) => send('media-state', s));
 media.on('art', (a) => send('media-art', a));
 media.on('error', (e) => log('media:', e.message));
@@ -326,9 +458,12 @@ media.on('error', (e) => log('media:', e.message));
 // ---- app -------------------------------------------------------------------
 
 app.whenReady().then(async () => {
+  settings.load();
   theme = await readTheme();
   createWindow();
   createTray();
+  createSettingsWindow();
+  if (process.argv.includes('--settings')) settingsWin.webContents.once('did-finish-load', () => setTimeout(showSettings, 300));
   media.start();
   setInterval(tick, TICK_MS);
   registerShortcut('Control+Alt+I', togglePinned);
@@ -347,4 +482,5 @@ app.on('window-all-closed', () => app.quit());
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   media.stop();
+  settings.save();
 });

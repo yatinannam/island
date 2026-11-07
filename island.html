@@ -232,7 +232,7 @@
   const rootStyle = document.documentElement.style;
   if (CSS.supports('transition-timing-function', 'linear(0, 1)')) {
     const open = spring({ stiffness: 240, damping: 21 });   // ~6% overshoot
-    const close = spring({ stiffness: 320, damping: 38 });  // no overshoot
+    const close = spring({ stiffness: 560, damping: 48 });  // no overshoot, snappier than open
     rootStyle.setProperty('--ease-open', open.easing);
     rootStyle.setProperty('--dur-open', open.ms + 'ms');
     rootStyle.setProperty('--ease-close', close.easing);
@@ -243,7 +243,7 @@
   const body = document.body;
   const islandEl = $('island');
   const shape = $('shape');
-  let cfg = { glass: true, dark: true };
+  let cfg = { glass: true, dark: true, transparency: 35, songColor: 55 };
 
   // ===== Glass ===============================================================
   // Windows can't blur behind a rounded transparent window, so the island
@@ -255,16 +255,57 @@
   const EAR = 14;          // concave curve joining the island to the screen edge
   const SHAPE_H = 140;     // matches --h
   const BLUR = 22;         // blur radius in CSS px
-  const MATERIAL = {
-    dark: {
-      lum: 'rgba(30, 30, 32, 0.86)', tint: 'rgba(24, 24, 26, 0.28)', noise: 0.022,
+  // Acrylic layers. "transparency" (0..100, from settings) thins the
+  // luminosity and tint layers so more of the backdrop shows through.
+  function material() {
+    const t = cfg.transparency / 100;
+    const clamp = (v) => Math.max(0, Math.min(1, v));
+    return cfg.dark ? {
+      lum: `rgba(30, 30, 32, ${clamp(0.97 - 0.32 * t)})`,
+      tint: `rgba(24, 24, 26, ${clamp(0.45 - 0.48 * t)})`,
+      noise: 0.022,
       edge: 'rgba(255, 255, 255, 0.10)', waiting: 'rgba(32, 32, 34, 0.96)', solid: '#000',
-    },
-    light: {
-      lum: 'rgba(246, 246, 248, 0.8)', tint: 'rgba(252, 252, 252, 0.35)', noise: 0.018,
+    } : {
+      lum: `rgba(246, 246, 248, ${clamp(0.92 - 0.35 * t)})`,
+      tint: `rgba(252, 252, 252, ${clamp(0.5 - 0.45 * t)})`,
+      noise: 0.018,
       edge: 'rgba(0, 0, 0, 0.08)', waiting: 'rgba(242, 242, 244, 0.97)', solid: '#f2f2f4',
-    },
-  };
+    };
+  }
+
+  // Song color: the artwork's hue washed over the material, strongest
+  // around the artwork. Fades between tracks.
+  const songTint = { r: 0, g: 0, b: 0, a: 0 };
+  const songTarget = { r: 0, g: 0, b: 0, a: 0 };
+  let tintAt = 0;
+
+  function stepSongTint(now) {
+    const dt = tintAt ? Math.min(100, now - tintAt) : 16;
+    tintAt = now;
+    const k = 1 - Math.exp(-dt / 160);
+    let moving = false;
+    for (const c of ['r', 'g', 'b', 'a']) {
+      const d = songTarget[c] - songTint[c];
+      if (Math.abs(d) > (c === 'a' ? 0.002 : 0.5)) { songTint[c] += d * k; moving = true; }
+      else songTint[c] = songTarget[c];
+    }
+    return moving;
+  }
+
+  function drawSongTint() {
+    if (songTint.a < 0.004) return;
+    const { r, g, b, a } = songTint;
+    const rgb = `${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}`;
+    ctx.fillStyle = `rgba(${rgb}, ${0.3 * a})`;
+    ctx.fillRect(0, 0, innerWidth, innerHeight);
+    // Glow from the artwork's position (content is laid out from the center).
+    const ax = innerWidth / 2 - 144, ay = 40;
+    const glow = ctx.createRadialGradient(ax, ay, 0, ax, ay, 260);
+    glow.addColorStop(0, `rgba(${rgb}, ${0.5 * a})`);
+    glow.addColorStop(1, `rgba(${rgb}, 0)`);
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, innerWidth, innerHeight);
+  }
 
   const canvas = $('glass');
   const ctx = canvas.getContext('2d');
@@ -327,7 +368,7 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, innerWidth, innerHeight);
     if (w < 1 || h < 0.5) return;
-    const m = cfg.dark ? MATERIAL.dark : MATERIAL.light;
+    const m = material();
     const path = notchPath(innerWidth / 2, w, h);
     const openness = Math.min(1, h / SHAPE_H);
 
@@ -352,12 +393,16 @@
       ctx.globalCompositeOperation = 'source-over';
       ctx.fillStyle = m.tint;
       ctx.fillRect(0, 0, innerWidth, innerHeight);
+      ctx.globalAlpha = 1;
+      drawSongTint();
       if (!noisePattern) noisePattern = makeNoise();
       ctx.globalAlpha = m.noise * fade;
       ctx.fillStyle = noisePattern;
       ctx.fillRect(0, 0, innerWidth, innerHeight);
       ctx.globalAlpha = 1;
       if (fade < 1) dirty = true;
+    } else {
+      drawSongTint();
     }
     // Hairline edge, skipping the top edge that touches the screen border.
     ctx.beginPath();
@@ -372,8 +417,10 @@
   // Redraws while the shape is moving or something changed, then sleeps
   // until kick() wakes it (state change, new captured frame, config).
   let still = 0;
-  function frame() {
+  function frame(now) {
     const r = islandEl.getBoundingClientRect();
+    if (stepSongTint(now)) dirty = true;
+    else tintAt = 0;
     if (dirty || r.width !== lastW || r.height !== lastH) {
       dirty = false;
       still = 0;
@@ -567,11 +614,10 @@
     }
     const best = bins.reduce((a, b) => (b.w > a.w ? b : a));
     if (best.w < 1.5) return null; // greyscale artwork
-    const r = best.r / best.w, g = best.g / best.w, b = best.b / best.w;
-    return lift(r, g, b);
+    return toHueSat(best.r / best.w, best.g / best.w, best.b / best.w);
   }
 
-  function lift(r, g, b) {
+  function toHueSat(r, g, b) {
     r /= 255; g /= 255; b /= 255;
     const max = Math.max(r, g, b), min = Math.min(r, g, b);
     let h = 0;
@@ -582,16 +628,39 @@
       else h = (r - g) / dl + 4;
     }
     h = ((h * 60) + 360) % 360;
-    const l0 = (max + min) / 2;
-    const s0 = dl ? dl / (1 - Math.abs(2 * l0 - 1)) : 0;
-    const s = Math.max(0.5, Math.min(0.9, s0));
-    const l = cfg.dark ? 0.7 : 0.48;
-    return `hsl(${Math.round(h)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%)`;
+    const l = (max + min) / 2;
+    const s = dl ? dl / (1 - Math.abs(2 * l - 1)) : 0;
+    return { h, s };
   }
 
-  function setAccent(color) {
-    rootStyle.setProperty('--accent', color || (cfg.dark ? '#a9b8ff' : '#5b6ee1'));
-    rootStyle.setProperty('--accent-glow', color ? color.replace(')', ' / 0.55)') : 'transparent');
+  function hslToRgb(h, s, l) {
+    const k = (n) => (n + h / 30) % 12;
+    const a = s * Math.min(l, 1 - l);
+    const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
+    return { r: f(0) * 255, g: f(8) * 255, b: f(4) * 255 };
+  }
+
+  let accent = null; // { h, s } from the current artwork
+
+  // UI accent (bars, art glow) lifted to read on the island; the material
+  // tint is deeper so it colors the glass without washing out the text.
+  function setAccent(hs) {
+    accent = hs;
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    if (hs) {
+      const ui = `hsl(${Math.round(hs.h)} ${Math.round(clamp(hs.s, 0.5, 0.9) * 100)}% ${cfg.dark ? 70 : 48}%)`;
+      rootStyle.setProperty('--accent', ui);
+      rootStyle.setProperty('--accent-glow', ui.replace(')', ' / 0.55)'));
+      Object.assign(songTarget, hslToRgb(hs.h, clamp(hs.s, 0.45, 0.85), cfg.dark ? 0.45 : 0.6));
+      // First color: start from it instead of fading in from black.
+      if (songTint.a < 0.004) Object.assign(songTint, hslToRgb(hs.h, clamp(hs.s, 0.45, 0.85), cfg.dark ? 0.45 : 0.6));
+      songTarget.a = cfg.songColor / 100;
+    } else {
+      rootStyle.setProperty('--accent', cfg.dark ? '#a9b8ff' : '#5b6ee1');
+      rootStyle.setProperty('--accent-glow', 'transparent');
+      songTarget.a = 0;
+    }
+    kick();
   }
 
   function onMediaState(s) {
@@ -608,8 +677,7 @@
     body.classList.toggle('light', !c.dark);
     if (!c.glass) stopCapture();
     else if (!glassWas && capInfo && body.classList.contains('open')) startCapture(capInfo);
-    setAccent(null);
-    if (artUrl) { const u = artUrl; artUrl = null; setArt(u); }
+    setAccent(accent); // theme or song color amount may have changed
     kick();
   }
 
