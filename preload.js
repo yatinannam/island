@@ -9,6 +9,6 @@ contextBridge.exposeInMainWorld('island', {
   onCapture: listen('capture'),
   onMedia: listen('media-state'),
   onArt: listen('media-art'),
-  setHover: (over) => ipcRenderer.send('hover', !!over),
   media: (cmd) => ipcRenderer.send('media-cmd', String(cmd)),
+  debug: (msg) => ipcRenderer.send('debug', String(msg)),
 });

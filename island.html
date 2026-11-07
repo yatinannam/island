@@ -25,6 +25,8 @@
     --fill: rgba(255, 255, 255, 0.92);
     --hover: rgba(255, 255, 255, 0.1);
     --press: rgba(255, 255, 255, 0.16);
+    --eq-top: #ffffff;
+    --eq-bottom: rgba(255, 255, 255, 0.55);
   }
   body.light {
     --label: #1c1c1e;
@@ -34,6 +36,8 @@
     --fill: rgba(0, 0, 0, 0.78);
     --hover: rgba(0, 0, 0, 0.06);
     --press: rgba(0, 0, 0, 0.1);
+    --eq-top: #1c1c1e;
+    --eq-bottom: rgba(28, 28, 30, 0.5);
   }
   html, body {
     margin: 0; height: 100%; overflow: hidden;
@@ -115,13 +119,14 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
 
-  /* Equalizer bars, tinted from the artwork; still when paused */
+  /* Equalizer bars: neutral two-tone so they sit with any artwork and
+     song color; still when paused */
   .eq { display: flex; align-items: center; gap: 2.5px; height: 18px; flex: none; margin-right: 2px; transition: opacity 200ms; }
   .eq i {
     width: 3px; height: 100%; border-radius: 2px;
-    background: var(--accent);
+    background: linear-gradient(var(--eq-top), var(--eq-bottom));
     transform: scaleY(0.22); transform-origin: 50% 50%;
-    transition: transform 250ms ease, background 400ms ease;
+    transition: transform 250ms ease;
   }
   .open.playing .eq i { animation: eq 0.9s ease-in-out infinite alternate; }
   .eq i:nth-child(2) { animation-delay: -0.35s !important; }
@@ -242,7 +247,6 @@
   const $ = (id) => document.getElementById(id);
   const body = document.body;
   const islandEl = $('island');
-  const shape = $('shape');
   let cfg = { glass: true, dark: true, transparency: 35, songColor: 55 };
 
   // ===== Glass ===============================================================
@@ -504,7 +508,8 @@
       mine.video = video;
       const onFrame = () => {
         if (cap !== mine) return;
-        buildBlur();
+        // After closing the stream stays up briefly for a quick re-open; skip the work.
+        if (body.classList.contains('open')) buildBlur();
         video.requestVideoFrameCallback(onFrame);
       };
       video.requestVideoFrameCallback(onFrame);
@@ -693,7 +698,6 @@
       renderProgress();
     } else {
       body.classList.remove('open');
-      window.island.setHover(false);
       clearInterval(progressTimer);
       kick();
       // Keep capturing briefly so a quick re-open is instant.
@@ -707,15 +711,17 @@
   window.island.onMedia(onMediaState);
   window.island.onArt((a) => setArt(a && a.url));
 
-  // Mouse input is off for the transparent window; turn it on over the shape.
-  shape.addEventListener('mouseenter', () => window.island.setHover(true));
-  shape.addEventListener('mouseleave', () => window.island.setHover(false));
 
   $('play').addEventListener('click', () => {
     // Optimistic: flip now, the helper confirms a moment later.
     media = { ...media, status: isPlaying() ? 'paused' : 'playing', position: positionNow(), updatedAt: Date.now() };
     renderMedia();
     window.island.media('toggle');
+  });
+  // Shows up in the main log with ISLAND_DEBUG=1: proves clicks reach the island.
+  addEventListener('pointerdown', (e) => {
+    const t = e.target.closest('button, .bar') || e.target;
+    window.island.debug(`pointerdown ${t.tagName.toLowerCase()}${t.id ? '#' + t.id : ''}${t.disabled ? ' (disabled)' : ''}`);
   });
   $('next').addEventListener('click', () => window.island.media('next'));
   $('prev').addEventListener('click', () => window.island.media('prev'));

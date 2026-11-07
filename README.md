@@ -32,7 +32,7 @@ Settings are saved to `%APPDATA%\island\settings.json`.
 
 ## Music
 
-Works with anything that shows up in the Windows media flyout: Spotify, browsers (YouTube, YouTube Music, SoundCloud), Media Player, and more. Shows artwork, title, artist and progress; play/pause, next, previous, and click the bar to seek when the app allows it. The equalizer bars take their color from the artwork.
+Works with anything that shows up in the Windows media flyout: Spotify, browsers (YouTube, YouTube Music, SoundCloud), Media Player, and more. Shows artwork, title, artist and progress; play/pause, next, previous, and click the bar to seek when the app allows it. The equalizer bars are a neutral white two-tone; the artwork's color goes into the background instead (Song color).
 
 `media/smtc.cs` is a small C# program that talks to the Windows System Media Transport Controls API. It is compiled on first run with the C# compiler that ships with Windows (.NET Framework `csc.exe`), so nothing extra needs installing. It streams JSON lines to the app and takes commands on stdin.
 
@@ -47,7 +47,8 @@ Two trade-offs:
 
 ## How it works
 
-- One transparent, always-on-top, non-focusable window sits at the top center of the display under the cursor. It is hidden while the island is closed, so nothing covers fullscreen games or video.
+- One transparent, always-on-top, non-focusable window sits at the top center of the display under the cursor. While the island is closed it stays there, fully transparent and click-through.
+- The window ignores the mouse except while the cursor is over the island, decided from the same cursor polling.
 - The main process polls the cursor every 16ms. Resting in the 240x3px hot zone for the open delay (150ms) opens the island. Leaving it for the close delay (120ms) closes it, with a stiffer spring than the open.
 - The window ignores the mouse except over the island shape itself, so the area around it never blocks clicks.
 - Open and close use a real damped-spring curve, generated at startup and fed to CSS as a `linear()` easing. A canvas paints the notch shape each frame to follow it.

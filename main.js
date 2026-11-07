@@ -1,4 +1,4 @@
-// island: hover-reveal top island for Windows.
+﻿// island: hover-reveal top island for Windows.
 // Run:     bun install && bun run start
 // Flags:   --open   start with the island pinned open (for testing)
 //          --solid  start with glass off
@@ -30,7 +30,6 @@ const WIN_H = SHAPE_H + PAD_B;
 const HOT_W = 240;          // hot zone width, centered on the top edge
 const HOT_H = 3;            // px from the top edge that triggers
 const LEAVE_PAD = 10;       // tolerance around the shape before leaving counts
-const HIDE_AFTER_CLOSE = 420; // ms for the close animation before hiding the window
 const TICK_MS = 16;
 // Open delay (dwell on the hot zone) and close delay come from settings.
 
@@ -47,7 +46,6 @@ let pinned = false;
 let previewing = false;     // island held open while the settings flyout is in use
 let leaveSince = 0;
 let hotSince = 0;
-let hideTimer = null;
 let current = null; // display the island is on
 
 const settings = new Settings(app.getPath('userData'));
@@ -62,7 +60,9 @@ const media = new MediaHelper();
 const DEBUG = process.env.ISLAND_DEBUG === '1';
 const log = (...a) => { if (DEBUG) console.log('[island]', ...a); };
 
-if (!app.requestSingleInstanceLock()) {
+if (!app.requestSingleInstanceLock() || process.argv.includes('--quit')) {
+  // Either another copy is running (it gets our argv), or we were only
+  // asked to quit and nothing was running.
   app.quit();
 }
 // `electron . --quit` closes the running copy cleanly; launching again
@@ -188,7 +188,7 @@ function createWindow() {
   win.setContentProtection(config().glass);
   // Transparent parts never block clicks. The renderer turns mouse input back
   // on while the cursor is over the shape itself.
-  win.setIgnoreMouseEvents(true, { forward: true });
+  win.setIgnoreMouseEvents(true);
   win.loadFile('island.html');
   win.webContents.once('did-finish-load', () => {
     ready = true;
@@ -207,12 +207,15 @@ function openIsland(d) {
   if (isOpen || !ready) return;
   isOpen = true;
   leaveSince = 0;
-  clearTimeout(hideTimer);
   current = d;
-  win.setBounds(windowBounds(d));
+  // Only move when the display changed: see closeIsland for why the window
+  // otherwise stays put.
+  const b = windowBounds(d);
+  const now = win.getBounds();
+  if (b.x !== now.x || b.y !== now.y) win.setBounds(b);
   win.setAlwaysOnTop(true, 'screen-saver'); // re-assert: other topmost windows may sit above us
   sendCapture(d);
-  win.showInactive();
+  if (!win.isVisible()) win.showInactive(); // first open only
   send('island-state', 'open');
   refreshTheme();
   if (process.env.ISLAND_SHOT) {
@@ -230,10 +233,10 @@ function closeIsland() {
   pinned = false;
   previewing = false;
   send('island-state', 'closed');
-  win.setIgnoreMouseEvents(true, { forward: true });
-  clearTimeout(hideTimer);
-  // Hide once collapsed, so nothing sits over fullscreen games and video.
-  hideTimer = setTimeout(() => { if (!isOpen) win.hide(); }, HIDE_AFTER_CLOSE);
+  // The window stays where it is, fully transparent and click-through.
+  // Hiding it, or moving it off-screen, after a click made Electron stop
+  // delivering clicks to it on later opens: the controls went dead.
+  setMouse(false);
 }
 
 function inHotZone(p, d) {
@@ -248,8 +251,26 @@ function inShape(p, d) {
       && p.y >= r.y && p.y <= r.y + r.height + LEAVE_PAD;
 }
 
+// The window is click-through except while the cursor is over the island.
+// Decided here from the polled cursor: Electron's { forward: true } mouse
+// forwarding never reached the page on Windows, so clicks fell through.
+let mouseOn = false;
+function setMouse(on) {
+  if (on === mouseOn || !win || win.isDestroyed()) return;
+  mouseOn = on;
+  log('mouse', on ? 'on' : 'off');
+  if (on) win.setIgnoreMouseEvents(false);
+  else win.setIgnoreMouseEvents(true);
+}
+
+function overShape(p, d) {
+  const r = shapeRect(d);
+  return p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height;
+}
+
 function tick() {
   const p = screen.getCursorScreenPoint();
+  setMouse(isOpen && overShape(p, current));
   if (!isOpen) {
     const d = displayAt(p);
     if (!inHotZone(p, d)) {
@@ -395,7 +416,7 @@ const TRAY_GUID = 'f98d0c7d-c510-4166-988f-ba324e0b6754';
 function trayTooltip() {
   const m = media.state;
   if (!m || m.none || !m.title) return 'island';
-  const line = m.artist ? `${m.title} · ${m.artist}` : m.title;
+  const line = m.artist ? `${m.title} Â· ${m.artist}` : m.title;
   return `island\n${line}`.slice(0, 127); // Windows caps tooltips at 127 chars
 }
 
@@ -429,13 +450,12 @@ function registerShortcut(accel, fn) {
 
 // ---- IPC -------------------------------------------------------------------
 
-ipcMain.on('hover', (_e, over) => {
-  if (!win || win.isDestroyed()) return;
-  if (over && isOpen) win.setIgnoreMouseEvents(false);
-  else win.setIgnoreMouseEvents(true, { forward: true });
-});
+ipcMain.on('debug', (_e, msg) => log('renderer:', String(msg)));
 
-ipcMain.on('media-cmd', (_e, cmd) => media.command(String(cmd)));
+ipcMain.on('media-cmd', (_e, cmd) => {
+  log('media-cmd', cmd);
+  media.command(String(cmd));
+});
 
 ipcMain.handle('snapshot', () => ({ config: config(), media: media.state, art: media.art }));
 
@@ -474,6 +494,7 @@ ipcMain.on('settings-size', (_e, h) => {
 });
 
 media.on('state', (s) => {
+  log('media', s.none ? 'none' : `${s.status} "${s.title}"`);
   send('media-state', s);
   if (tray) tray.setToolTip(trayTooltip());
 });
