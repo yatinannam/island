@@ -30,8 +30,6 @@
     --eq-bottom: rgba(255, 255, 255, 0.55);
     --divider: rgba(255, 255, 255, 0.08);
   }
-  /* The island grows by the shelf's height when it has files or one is being dragged in */
-  body.shelf-on { --h: calc(140px + var(--shelf-h)); }
   body.light {
     --label: #1c1c1e;
     --label-2: rgba(60, 60, 67, 0.68);
@@ -84,7 +82,7 @@
   .content {
     position: absolute; top: 0; left: 50%;
     width: var(--w); height: var(--h);
-    padding: 16px 22px 0;
+    padding: 0; /* each page has its own padding */
     box-sizing: border-box;
     opacity: 0;
     filter: blur(6px);
@@ -181,18 +179,36 @@
   .playing .icon-play { display: none; }
   .playing .icon-pause { display: inline; }
 
-  /* ===== File shelf: a row under the music ===== */
-  .shelf {
-    position: absolute; left: 14px; right: 14px; top: 140px; height: 68px;
-    display: flex; align-items: center; gap: 6px;
-    opacity: 0; pointer-events: none; transition: opacity 160ms ease;
+  /* ===== Pages: Music and Shelf side by side; scrolling on the island rolls between them ===== */
+  .pages {
+    position: absolute; inset: 0; display: flex; width: calc(var(--w) * 2);
+    transform: translateX(calc(var(--page, 0) * var(--w) * -1));
+    transition: transform var(--dur-page, 420ms) var(--ease-page, ease);
   }
-  .shelf-on .shelf { opacity: 1; pointer-events: auto; }
-  .shelf::before {
-    content: ""; position: absolute; left: 8px; right: 8px; top: -3px; height: 1px; background: var(--divider);
+  .pg {
+    position: relative; flex: none; width: var(--w); height: var(--h);
+    padding: 16px 22px 0; box-sizing: border-box; transition: opacity 260ms ease;
   }
+  .pg.away { opacity: 0.35; }
+  /* Page dots, top center inside the notch; the shelf dot shows a count from the music page */
+  .dots { position: absolute; top: 5px; left: 50%; transform: translateX(-50%); display: flex; gap: 5px; z-index: 2; }
+  .dots button {
+    width: 5px; height: 5px; border-radius: 3px; background: var(--label-3);
+    font: 700 7.5px/1 "Segoe UI", system-ui, sans-serif; color: rgba(0, 0, 0, 0.85);
+    transition: width 240ms var(--ease-page, ease), background 200ms ease;
+  }
+  .dots button.on { width: 16px; background: var(--fill); }
+  .dots button.count { width: auto; min-width: 10px; height: 10px; padding: 0 3px; margin-top: -2.5px; background: var(--label-2); }
+  body.light .dots button.count { color: #fff; }
+
+  /* ===== File shelf page ===== */
+  .shelf { position: relative; height: 100%; }
+  .shelf-head { display: flex; align-items: center; gap: 6px; height: 26px; margin-top: -2px; }
+  .shelf-head strong { font-size: 13.5px; font-weight: 600; }
+  .shelf-head span { flex: 1; font-size: 12px; color: var(--label-3); }
   .tiles {
-    flex: 1; height: 100%; display: flex; align-items: center; gap: 4px;
+    position: absolute; left: -8px; right: -8px; top: 30px; height: 84px;
+    display: flex; align-items: center; gap: 4px;
     overflow-x: auto; overflow-y: hidden; scrollbar-width: none; transition: opacity 120ms;
   }
   .tiles::-webkit-scrollbar { display: none; }
@@ -215,14 +231,22 @@
   .tile .x svg { width: 8px; height: 8px; stroke: currentColor; stroke-width: 2.4; fill: none; stroke-linecap: round; }
   .tile:hover .x { opacity: 1; }
   .tile .x:hover { background: rgba(70, 70, 76, 0.95); }
-  .shelf-actions { display: flex; flex-direction: column; gap: 4px; flex: none; transition: opacity 120ms; }
+  .shelf-actions { display: flex; gap: 2px; flex: none; transition: opacity 120ms; }
   .shelf-actions button { width: 28px; height: 28px; color: var(--label-2); }
   .shelf-actions button:hover { color: var(--label); }
   .shelf-actions svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 
-  /* Shown while files are dragged over the island */
+  /* Empty shelf, and the drop target shown while files are dragged over the island */
+  .empty, .dropzone {
+    position: absolute; left: -8px; right: -8px; top: 34px; height: 76px;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    border: 1.5px dashed var(--label-3); border-radius: 16px;
+    font-size: 12.5px; color: var(--label-2); pointer-events: none;
+  }
+  .empty { display: none; }
+  .shelf-empty .empty { display: flex; }
+  .empty svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   .dropzone {
-    position: absolute; inset: 4px 0;
     display: flex; align-items: center; justify-content: center; gap: 8px;
     border: 1.5px dashed var(--label-3); border-radius: 16px;
     font-size: 12.5px; color: var(--label-2);
@@ -230,7 +254,7 @@
   }
   .dropzone svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   .drag-over .dropzone { opacity: 1; border-color: var(--label-2); }
-  .drag-over .tiles, .drag-over .shelf-actions { opacity: 0.12; }
+  .drag-over .tiles, .drag-over .shelf-actions, .drag-over .empty { opacity: 0.1; }
 </style>
 </head>
 <body class="idle">
@@ -238,6 +262,9 @@
   <div class="island" id="island">
     <div class="shape" id="shape">
       <div class="content">
+        <div class="dots"><button id="dot0" title="Music"></button><button id="dot1" title="Shelf"></button></div>
+        <div class="pages" id="pages">
+        <section class="pg" id="pgMusic">
         <div class="row">
           <div class="art" id="art">
             <svg class="note" viewBox="0 0 24 24"><path d="M9 17.5a3 3 0 1 1-2-2.83V5.6a1 1 0 0 1 .76-.97l10-2.5A1 1 0 0 1 19 3.1V15.5a3 3 0 1 1-2-2.83V7.28L9 9.28z"/></svg>
@@ -267,20 +294,31 @@
             <svg viewBox="0 0 24 24"><path d="M4.1 6.5 12.6 12 4.1 17.5Z M13.1 6.5 21.6 12 13.1 17.5Z"/></svg>
           </button>
         </div>
+        </section>
+        <section class="pg away" id="pgShelf">
         <div class="shelf" id="shelf">
-          <div class="tiles" id="tiles"></div>
-          <div class="shelf-actions">
-            <button id="dragAll" title="Drag all files out" draggable="true">
-              <svg viewBox="0 0 24 24"><rect x="4" y="8" width="12" height="12" rx="2.5"/><path d="M8 5.5V5a1 1 0 0 1 1-1h9a2 2 0 0 1 2 2v9a1 1 0 0 1-1 1h-.5"/></svg>
-            </button>
-            <button id="clearShelf" title="Clear shelf">
-              <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
-            </button>
+          <div class="shelf-head">
+            <strong>Shelf</strong><span id="shelfCount">empty</span>
+            <div class="shelf-actions">
+              <button id="dragAll" title="Drag all files out" draggable="true">
+                <svg viewBox="0 0 24 24"><rect x="4" y="8" width="12" height="12" rx="2.5"/><path d="M8 5.5V5a1 1 0 0 1 1-1h9a2 2 0 0 1 2 2v9a1 1 0 0 1-1 1h-.5"/></svg>
+              </button>
+              <button id="clearShelf" title="Clear shelf">
+                <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+              </button>
+            </div>
           </div>
-          <div class="dropzone">
+          <div class="tiles" id="tiles"></div>
+          <div class="empty">
             <svg viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></svg>
             Drop files here
           </div>
+          <div class="dropzone">
+            <svg viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></svg>
+            Drop to add to the shelf
+          </div>
+        </div>
+        </section>
         </div>
       </div>
     </div>
@@ -316,6 +354,9 @@
     rootStyle.setProperty('--dur-open', open.ms + 'ms');
     rootStyle.setProperty('--ease-close', close.easing);
     rootStyle.setProperty('--dur-close', close.ms + 'ms');
+    const pageSpring = spring({ stiffness: 300, damping: 27 });  // page roll
+    rootStyle.setProperty('--ease-page', pageSpring.easing);
+    rootStyle.setProperty('--dur-page', pageSpring.ms + 'ms');
   }
 
   const $ = (id) => document.getElementById(id);
@@ -772,6 +813,7 @@
 
   window.island.onState((s) => {
     if (s === 'open') {
+      setPage(0); // always opens on music; dragging a file in switches to the shelf
       // Two frames so the collapsed state is committed before the transition starts.
       requestAnimationFrame(() => requestAnimationFrame(() => {
         body.classList.add('open');
@@ -846,17 +888,60 @@
 
   // ===== File shelf ==========================================================
 
-  const SHELF_EXTRA = 76; // matches --shelf-h and SHELF_H in main.js
   let shelfItems = [];
   let dragDepth = 0;
   let draggingOut = false; // our own drag-out passing back over the island
+  let page = 0;            // 0 = music, 1 = shelf
 
+  // The island keeps its size: the shelf is a page, not an extra row.
   function updateShelfSize() {
-    const on = shelfItems.length > 0 || body.classList.contains('drag-over');
-    body.classList.toggle('shelf-on', on);
-    window.island.shapeSize(on ? SHAPE_H + SHELF_EXTRA : SHAPE_H);
-    kick();
+    window.island.shapeSize(SHAPE_H);
+    body.classList.toggle('shelf-empty', shelfItems.length === 0);
+    $('shelfCount').textContent = shelfItems.length
+      ? `${shelfItems.length} ${shelfItems.length === 1 ? 'file' : 'files'}` : 'empty';
+    renderDots();
   }
+
+  // ===== Pages ===============================================================
+
+  function setPage(p) {
+    page = Math.max(0, Math.min(1, p));
+    document.documentElement.style.setProperty('--page', page);
+    $('pgMusic').classList.toggle('away', page !== 0);
+    $('pgShelf').classList.toggle('away', page !== 1);
+    renderDots();
+  }
+
+  function renderDots() {
+    $('dot0').classList.toggle('on', page === 0);
+    $('dot1').classList.toggle('on', page === 1);
+    const n = page === 0 ? shelfItems.length : 0;
+    $('dot1').classList.toggle('count', n > 0);
+    $('dot1').textContent = n > 0 ? String(n) : '';
+  }
+
+  $('dot0').addEventListener('click', () => setPage(0));
+  $('dot1').addEventListener('click', () => setPage(1));
+
+  // One page per scroll gesture. Sideways scrolling over a long shelf
+  // (trackpad, or Shift+wheel) scrolls the files instead.
+  let wheelAcc = 0, wheelCool = 0, wheelIdle = 0;
+  addEventListener('wheel', (e) => {
+    if (!body.classList.contains('open')) return;
+    const sideways = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+    const tiles = $('tiles');
+    if (sideways && page === 1 && e.target.closest('.tiles') && tiles.scrollWidth > tiles.clientWidth) return;
+    e.preventDefault();
+    if (performance.now() < wheelCool) return;
+    wheelAcc += sideways ? e.deltaX : e.deltaY;
+    clearTimeout(wheelIdle);
+    wheelIdle = setTimeout(() => { wheelAcc = 0; }, 160);
+    if (Math.abs(wheelAcc) > 40) {
+      setPage(page + Math.sign(wheelAcc));
+      wheelAcc = 0;
+      wheelCool = performance.now() + 450;
+    }
+  }, { passive: false });
 
   function renderShelf(items) {
     shelfItems = Array.isArray(items) ? items : [];
@@ -904,15 +989,12 @@
 
   $('dragAll').addEventListener('dragstart', (e) => startDragOut(e, shelfItems.map((i) => i.id)));
   $('clearShelf').addEventListener('click', () => window.island.shelfClear());
-  $('tiles').addEventListener('wheel', (e) => {
-    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { e.currentTarget.scrollLeft += e.deltaY; e.preventDefault(); }
-  }, { passive: false });
-
   const isFileDrag = (e) => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
 
   function setDragOver(on) {
     if (body.classList.contains('drag-over') === on) return;
     body.classList.toggle('drag-over', on);
+    if (on) setPage(1); // a file dragged onto the island jumps to the shelf
     updateShelfSize();
   }
 
