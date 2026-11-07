@@ -160,6 +160,10 @@
       <span class="label">Start with Windows</span>
       <button class="toggle" id="startup" role="switch"></button>
     </div>
+    <div class="row">
+      <span class="label">Always show icon on taskbar</span>
+      <button class="toggle" id="trayShown" role="switch"></button>
+    </div>
   </div>
 
   <footer>
@@ -210,6 +214,8 @@
     }
     $('startup').classList.toggle('on', p.startWithWindows);
     $('startup').setAttribute('aria-checked', String(p.startWithWindows));
+    $('trayShown').classList.toggle('on', p.trayShown);
+    $('trayShown').setAttribute('aria-checked', String(p.trayShown));
     $('pin').textContent = p.pinned ? 'Unpin island' : 'Pin island open';
     $('pin').classList.toggle('primary', p.pinned);
     requestAnimationFrame(() => window.settings.resize(document.documentElement.scrollHeight));
@@ -228,6 +234,9 @@
   }
   $('startup').addEventListener('click', () => {
     window.settings.action(state && state.startWithWindows ? 'start-with-windows-off' : 'start-with-windows-on');
+  });
+  $('trayShown').addEventListener('click', () => {
+    window.settings.action(state && state.trayShown ? 'tray-shown-off' : 'tray-shown-on');
   });
   $('pin').addEventListener('click', () => window.settings.action('pin'));
   $('quit').addEventListener('click', () => window.settings.action('quit'));

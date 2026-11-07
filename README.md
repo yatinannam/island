@@ -11,8 +11,10 @@ A Mac-style island for Windows 11. Rest the cursor on the top-center edge of any
 The first run downloads the Electron binary (about 100MB) and compiles the media helper, so it is slow once.
 
 - Left-click the tray icon for settings. Right-click it for Pin and Quit.
-- Ctrl+Alt+I pins the island open (or closes it). Ctrl+Alt+Q quits.
+- Ctrl+Alt+I pins the island open (or closes it). Ctrl+Alt+Q quits. `bun run quit` closes a running copy.
 - `--solid` starts with glass off. `--settings` opens the settings flyout on start.
+
+The tray icon is put on the taskbar (not the hidden `^` menu) on first run. Turn that off with "Always show icon on taskbar" in settings, or in Windows Settings > Personalization > Taskbar > Other system tray icons. In development Windows lists it as "Electron".
 - Set `ISLAND_DEBUG=1` to log open/close events and media helper errors.
 
 ## Settings
@@ -24,6 +26,7 @@ The tray flyout uses Windows' own acrylic material and your Windows accent color
 - **Song color:** how strongly the artwork's color tints the island, strongest around the cover (0 turns it off). Fades between tracks; works in Solid too.
 - **Open delay / Close delay:** how long the cursor rests on the top edge before it opens, and how long it stays away before it closes.
 - **Start with Windows.**
+- **Always show icon on taskbar.**
 
 Settings are saved to `%APPDATA%\island\settings.json`.
 

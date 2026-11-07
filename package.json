@@ -8,6 +8,7 @@
   "description": "Hover-reveal top island for Windows",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --open"
+    "dev": "electron . --open",
+    "quit": "electron . --quit"
   }
 }

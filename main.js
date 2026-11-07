@@ -6,7 +6,7 @@
 // Hotkeys: Ctrl+Alt+I pin/unpin the island, Ctrl+Alt+Q quit.
 
 const {
-  app, BrowserWindow, screen, globalShortcut, ipcMain, Tray, Menu, nativeImage,
+  app, BrowserWindow, screen, globalShortcut, ipcMain, Tray, Menu,
   desktopCapturer, nativeTheme, systemPreferences,
 } = require('electron');
 const { execFile } = require('child_process');
@@ -14,6 +14,8 @@ const fs = require('fs');
 const path = require('path');
 const { MediaHelper } = require('./media/helper');
 const { Settings } = require('./settings');
+const { trayImage } = require('./icon');
+const { isPromoted, setPromoted } = require('./tray-visibility');
 
 // Expanded island shape, in DIP. Must match --w / --h in island.html.
 const SHAPE_W = 380;
@@ -63,6 +65,12 @@ const log = (...a) => { if (DEBUG) console.log('[island]', ...a); };
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 }
+// `electron . --quit` closes the running copy cleanly; launching again
+// without it opens the settings flyout.
+app.on('second-instance', (_e, argv) => {
+  if (argv.includes('--quit')) app.quit();
+  else if (settingsWin) showSettings();
+});
 
 function displayAt(p) {
   return screen.getDisplayNearestPoint(p);
@@ -128,7 +136,9 @@ function applyConfig() {
 async function refreshTheme() {
   const next = await readTheme();
   if (next.dark !== theme.dark || next.transparency !== theme.transparency) {
+    const iconChanged = next.dark !== theme.dark;
     theme = next;
+    if (iconChanged && tray) tray.setImage(trayImage(theme.dark));
     applyConfig();
   }
 }
@@ -286,6 +296,7 @@ function settingsPayload() {
   return {
     values: settings.values,
     startWithWindows: app.getLoginItemSettings(loginItem()).openAtLogin,
+    trayShown,
     windowsTransparency: theme.transparency,
     forceSolid,
     pinned: isOpen && pinned && !previewing,
@@ -332,8 +343,17 @@ function placeSettings() {
   settingsWin.setPosition(x, Math.round(y));
 }
 
+// Whether the tray icon is on the taskbar; the user can also change it in
+// Windows settings, so re-read it each time the flyout opens.
+let trayShown = false;
+async function refreshTrayShown() {
+  trayShown = await isPromoted(TRAY_GUID);
+  sendSettings();
+}
+
 function showSettings() {
   if (!settingsWin || settingsWin.isDestroyed()) createSettingsWindow();
+  refreshTrayShown();
   sendSettings();
   placeSettings();
   settingsShownAt = Date.now();
@@ -368,28 +388,20 @@ function preview() {
 
 // ---- tray ------------------------------------------------------------------
 
-// 16x16 white rounded pill for the tray, drawn as raw BGRA pixels.
-function trayIcon() {
-  const s = 16;
-  const buf = Buffer.alloc(s * s * 4);
-  for (let y = 0; y < s; y++) {
-    for (let x = 0; x < s; x++) {
-      // pill from (2,5) to (13,10), radius 3
-      const cx = Math.min(Math.max(x + 0.5, 5), 11);
-      const cy = 7.5;
-      const dist = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
-      const a = Math.max(0, Math.min(1, 3 - dist + 0.5));
-      const i = (y * s + x) * 4;
-      buf[i] = buf[i + 1] = buf[i + 2] = 255;
-      buf[i + 3] = Math.round(a * 255);
-    }
-  }
-  return nativeImage.createFromBitmap(buf, { width: s, height: s });
+// A fixed GUID lets Windows recognise the icon across restarts, so its
+// "always show" choice sticks. Tied to the exe path while unsigned.
+const TRAY_GUID = 'f98d0c7d-c510-4166-988f-ba324e0b6754';
+
+function trayTooltip() {
+  const m = media.state;
+  if (!m || m.none || !m.title) return 'island';
+  const line = m.artist ? `${m.title} · ${m.artist}` : m.title;
+  return `island\n${line}`.slice(0, 127); // Windows caps tooltips at 127 chars
 }
 
 function createTray() {
-  tray = new Tray(trayIcon());
-  tray.setToolTip('island');
+  tray = new Tray(trayImage(theme.dark), TRAY_GUID);
+  tray.setToolTip(trayTooltip());
   // Left click: settings flyout. Right click: menu.
   tray.on('click', toggleSettings);
   const menu = Menu.buildFromTemplate([
@@ -399,6 +411,14 @@ function createTray() {
     { label: 'Quit (Ctrl+Alt+Q)', click: () => app.quit() },
   ]);
   tray.on('right-click', () => tray.popUpContextMenu(menu));
+  // Show the icon on the taskbar instead of the ^ overflow, once. After
+  // that it's the user's call, from our settings or Windows' own.
+  if (!settings.values.trayPromoted) {
+    setPromoted(TRAY_GUID, true).then((ok) => {
+      log('tray promoted:', ok);
+      if (ok) { settings.update({ trayPromoted: true }); sendSettings(); }
+    });
+  }
 }
 
 function registerShortcut(accel, fn) {
@@ -439,6 +459,8 @@ ipcMain.on('settings-action', (_e, action) => {
   } else if (action === 'start-with-windows-on' || action === 'start-with-windows-off') {
     app.setLoginItemSettings({ ...loginItem(), openAtLogin: action.endsWith('-on') });
     sendSettings();
+  } else if (action === 'tray-shown-on' || action === 'tray-shown-off') {
+    setPromoted(TRAY_GUID, action.endsWith('-on')).then(refreshTrayShown);
   }
 });
 
@@ -451,7 +473,10 @@ ipcMain.on('settings-size', (_e, h) => {
   }
 });
 
-media.on('state', (s) => send('media-state', s));
+media.on('state', (s) => {
+  send('media-state', s);
+  if (tray) tray.setToolTip(trayTooltip());
+});
 media.on('art', (a) => send('media-art', a));
 media.on('error', (e) => log('media:', e.message));
 
