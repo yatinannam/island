@@ -192,7 +192,13 @@ function createWindow() {
     alwaysOnTop: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      backgroundThrottling: false, // keep animations smooth right after show
+      // Must stay on (the default). With it off, Electron never tells Chromium
+      // the page was hidden, so when Windows hides the window (display off in
+      // standby, lock screen, covered, hide()) Chromium hides its input child
+      // window (Chrome_RenderWidgetHostHWND) and never shows it again. Clicks
+      // then hit the top-level window, which eats the button-down
+      // (MA_NOACTIVATEANDEAT, the window can't activate): dead clicks after sleep.
+      backgroundThrottling: true,
     },
   });
   win.setAlwaysOnTop(true, 'screen-saver');

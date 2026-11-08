@@ -90,7 +90,7 @@ flowchart LR
 | Process / window | Role |
 |---|---|
 | **Main** (`main.js`) | Polls the cursor, opens/closes the island, toggles click-through, owns the tray, settings, shelf store and the media helper, answers IPC. |
-| **Island window** (`island.html` + `preload.js`) | Frameless, transparent, always-on-top, `focusable: false`, `backgroundThrottling: false`, `setContentProtection(true)` in glass mode. Draws the notch on a canvas and hosts the Music and Shelf pages. |
+| **Island window** (`island.html` + `preload.js`) | Frameless, transparent, always-on-top, `focusable: false`, `backgroundThrottling: true`, `setContentProtection(true)` in glass mode. Draws the notch on a canvas and hosts the Music and Shelf pages. |
 | **Settings flyout** (`settings.html` + `settings-preload.js`) | 340 px frameless window with `backgroundMaterial: 'acrylic'`, positioned above the tray icon inside the work area; hides on blur. |
 | **`smtc.exe`** (`media/smtc.cs`) | Child process bridging WinRT media APIs. Exits when its stdin closes. |
 
@@ -101,6 +101,8 @@ All renderers run with Electron defaults: `contextIsolation: true`, `sandbox: tr
 **Geometry (DIP).** Shape 380×140 (`SHAPE_W`/`SHAPE_H`). Window 476×264: horizontal padding of 48 px and bottom padding sized for spring overshoot, the 14 px concave ears and the drop shadow. Positioned at the top center of the display under the cursor.
 
 **Lifecycle.** The window is shown on first open and then **never hidden or moved** (it is only re-positioned when the island opens on a different display). While closed it is fully transparent and click-through. Hiding it with `hide()`/`showInactive()` or parking it off-screen after a click caused Chromium to stop delivering mouse presses to the window on later opens (pointer moves still arrived), so the controls went dead after first use.
+
+**Why clicks died (and the fix).** With `backgroundThrottling: false`, Electron never tells Chromium the page was hidden. When Windows hides the window anyway (display off in Modern Standby, lock screen, fully covered, `hide()`), Chromium hides its input child window (`Chrome_RenderWidgetHostHWND`) and only re-shows it on the page-shown path, which then never runs. Clicks land on the top-level window instead, which answers `WM_MOUSEACTIVATE` with `MA_NOACTIVATEANDEAT` because the window can't be activated: Windows drops the button-down, so no click reaches the page. The island window therefore keeps `backgroundThrottling` on; this fixed dead controls after the PC wakes from sleep.
 
 **Open/close.** The main process polls `screen.getCursorScreenPoint()` every 16 ms:
 
