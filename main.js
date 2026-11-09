@@ -201,6 +201,10 @@ function createWindow() {
       backgroundThrottling: true,
     },
   });
+  // Electron creates this frameless transparent window ~5 DIP too wide
+  // (481 for 476), which put the island 3 physical px right of center.
+  // Setting the bounds again gives the requested size.
+  win.setBounds(windowBounds(screen.getPrimaryDisplay()));
   win.setAlwaysOnTop(true, 'screen-saver');
   win.setContentProtection(config().glass);
   // Transparent parts never block clicks. The renderer turns mouse input back

@@ -489,12 +489,15 @@
   }
 
   // Island body plus concave "ears" at the top corners, in CSS px.
+  // The top edge runs above the window: drawn exactly on y=0, anti-aliasing
+  // left the first pixel row ~75% opaque, a thin gap under the screen edge.
   function notchPath(cx, w, h) {
     const p = new Path2D();
     const e = Math.min(EAR, h * 0.4);
     const r = Math.max(0, Math.min(R, h - e, w / 2));
     const x0 = cx - w / 2, x1 = cx + w / 2;
-    p.moveTo(x0 - e, 0);
+    p.moveTo(x0 - e, -2);
+    p.lineTo(x1 + e, -2);
     p.lineTo(x1 + e, 0);
     if (e > 0) p.arc(x1 + e, e, e, -Math.PI / 2, -Math.PI, true);
     p.lineTo(x1, h - r);
