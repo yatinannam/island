@@ -8,7 +8,7 @@ A macOS-style "notch" island for Windows 10/11, built on Electron. Rest the curs
 |---|---|
 | Platform | Windows 10 1809+ / Windows 11, x64 (developed and tested on Windows 11 build 26300 at 125% scaling) |
 | Runtime | Electron 45 (Chromium + Node), one 33 MB native helper for media |
-| Footprint | ~1.5% of one CPU core idle; ~0.3 core while open with glass; ~350 MB RAM across Electron processes |
+| Footprint | ~1.5% of one CPU core idle; ~0.3 core while open with glass (~0.4 while music plays); ~350 MB RAM across Electron processes |
 | Network | None. The app makes no network requests. |
 | License | [MIT](LICENSE) |
 
@@ -22,6 +22,7 @@ A macOS-style "notch" island for Windows 10/11, built on Electron. Rest the curs
 - [The island window](#the-island-window)
 - [Glass rendering](#glass-rendering)
 - [Media bridge (`smtc.exe`)](#media-bridge-smtcexe)
+- [Equalizer (`eq.js`)](#equalizer-eqjs)
 - [File shelf](#file-shelf)
 - [Settings](#settings)
 - [Tray icon](#tray-icon)
@@ -38,6 +39,7 @@ A macOS-style "notch" island for Windows 10/11, built on Electron. Rest the curs
 
 - **Hover-to-reveal island** attached to the top edge (concave "ears", rounded bottom corners), opened and closed with physically simulated springs.
 - **Now playing** for any app that publishes to Windows System Media Transport Controls (Spotify, Chromium/Edge/Firefox media sessions, Media Player, ...): artwork, title, artist, live progress, play/pause/next/previous, click or drag to seek.
+- **Live equalizer**: the four bars next to the title move with the sound actually playing (bass to treble).
 - **Glass material** matching Windows acrylic (blur, luminosity, tint, noise), tinted by the current artwork ("song color"), following the system theme and the *Transparency effects* switch. A solid mode is available.
 - **File shelf** on a second page: drop files, folders or in-memory blobs (e.g. images from a browser) on the island, drag them back out into any app; multi-select by long press or Ctrl+click.
 - **Tray flyout** for settings, rendered with the native acrylic backdrop and the Windows accent color.
@@ -49,7 +51,7 @@ Run `island-setup-<version>.exe`. The NSIS one-click installer installs per-user
 The installer and `island.exe` are **not code-signed**. SmartScreen may show *Windows protected your PC* on first run: choose *More info > Run anyway*. Verify the download against the SHA-256 in the release notes first:
 
 ```powershell
-Get-FileHash .\island-setup-0.1.2.exe -Algorithm SHA256
+Get-FileHash .\island-setup-0.1.3.exe -Algorithm SHA256
 ```
 
 User data lives in `%APPDATA%\island` (`settings.json`, `shelf.json`, `shelf-files\`). Uninstalling leaves it in place; delete the folder to remove it.
@@ -155,6 +157,14 @@ It follows `GlobalSystemMediaTransportControlsSessionManager.GetCurrentSession()
 
 The renderer extrapolates position as `position + (now − updatedAt)` while playing, applies play/pause and seeks optimistically, and ignores positions reported in the 1.5 s after a seek for the same track. `MediaHelper` restarts the helper with linear backoff (up to 5 times).
 
+## Equalizer (`eq.js`)
+
+The bars follow the system audio, loaded as a separate script after the island's own.
+
+1. **Capture.** `getUserMedia` with `chromeMediaSource: 'desktop'` for audio is Chromium's WASAPI loopback of the default output device: the mix Windows plays, not a microphone. Audio-only requests hang, so it also asks for a 16×16, 1 fps desktop video track and stops it immediately; the audio track stays live.
+2. **Analysis.** An `AudioContext({ sinkId: { type: 'none' } })` (no output stream of its own) feeds an `AnalyserNode` (FFT 2048). Each frame, mean power in four bands (40–160, 160–600, 600–2400, 2400–10000 Hz) is scaled against that band's own 1 s average and spread, so every bar moves on loud, compressed songs and quiet ones alike; rise and fall are smoothed (30 / 90 ms).
+3. **Lifecycle.** A `MutationObserver` runs it while the body has `open` and `playing`; capture stops 4 s after either ends. Before the first sound, if capture fails, and after 1.5 s of silence, the bars fall back to the CSS animation. Live bars get `will-change: transform` so new heights only update compositor layers.
+
 ## File shelf
 
 The shelf is the island's second page; the island never changes size. Scroll on the island to roll pages (one page per gesture, 40 px delta threshold, 450 ms cooldown; sideways scroll over an overflowing shelf scrolls the tiles), or click the dots at the top. The shelf dot shows the file count while the music page is visible. Every open starts on Music; a file dragged over the island switches to Shelf.
@@ -251,6 +261,7 @@ bun run dist         # build the installer
 main.js                 main process: cursor poller, windows, tray, IPC
 preload.js              window.island bridge
 island.html             island renderer: canvas glass, music + shelf pages
+eq.js                   equalizer bars from system audio loopback
 settings.html           tray flyout UI
 settings-preload.js     window.settings bridge
 settings.js             settings store (validation, debounced save)

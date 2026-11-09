@@ -17,6 +17,7 @@ island runs entirely on your machine and **makes no network requests**. For revi
 | Area | Access | Why |
 |---|---|---|
 | Screen content | Captures the region behind the island with `desktopCapturer` while it is open in glass mode (stops 4 s after closing) | To blur it into the glass. Frames stay in memory in the renderer, are never written to disk or sent anywhere. Turn on *Solid* to disable capture entirely. |
+| System audio | Listens to the sound your default output device plays (loopback, not the microphone) while the island is open and something is playing (stops 4 s after) | To move the equalizer bars with the music. Only four loudness levels are computed per frame; the audio is never recorded, written to disk or sent anywhere. Windows shows no microphone-in-use indicator for it because no microphone is opened. |
 | Media sessions | Reads the current Windows media session (title, artist, artwork, position) and sends play/pause/skip/seek through `smtc.exe` | Now-playing controls. |
 | Files | Reads paths and shell thumbnails of files you drop on the shelf; writes dropped in-memory blobs to `%APPDATA%\island\shelf-files` | File shelf. The app only ever deletes files inside `shelf-files`; it never deletes or modifies your originals. Dragging out is a normal Windows drag; the drop target decides copy or move. |
 | App data | `%APPDATA%\island\settings.json`, `shelf.json` | Preferences and the shelf list. |
