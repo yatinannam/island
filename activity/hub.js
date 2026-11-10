@@ -87,7 +87,9 @@ class Hub extends EventEmitter {
     this.burst = { at: 0, n: 0 };
   }
 
+  // Runs while Claude Code is on in settings; stop() forgets everything.
   start() {
+    if (this.server) return;
     this.server = net.createServer((sock) => {
       let buf = '';
       sock.setEncoding('utf8');
@@ -113,9 +115,21 @@ class Hub extends EventEmitter {
     clearInterval(this.timer);
     clearInterval(this.staleTimer);
     if (this.server) this.server.close();
+    this.server = null;
+    this.queue = [];
+    if (this.current) this.hide(false);
+    if (this.sessions.size) {
+      this.sessions.clear();
+      this.emitSessions();
+    }
+  }
+
+  get running() {
+    return !!this.server;
   }
 
   onLine(line) {
+    if (!this.server) return;
     const now = Date.now();
     if (now - this.burst.at > 1000) this.burst = { at: now, n: 0 };
     if (++this.burst.n > 200) return; // flood
@@ -149,7 +163,7 @@ class Hub extends EventEmitter {
         needsKind: null, needsAt: 0, tool: '', askTool: '', subagents: 0, pid: 0, hwnd: 0, lastEventAt: 0,
       };
       this.sessions.set(s.id, s);
-      this.trim();
+      this.trim(s.id); // never the new one: it starts "idle", the lowest rank but stopped
     }
     return s;
   }
@@ -244,7 +258,8 @@ class Hub extends EventEmitter {
       this.log('activity: terminal in front, no peek for', this.label(s));
       return;
     }
-    if (this.sessions.get(s.id) !== s) return;
+    // Moved on while we asked (a new prompt, closed, removed, Claude Code turned off).
+    if (this.sessions.get(s.id) !== s || s.state !== kind) return;
     this.queue = this.queue.filter((q) => q.session !== s.id);
     if (this.current && this.current.p.session === s.id) this.hide(false);
     this.queue.push(p);
@@ -385,7 +400,7 @@ class Hub extends EventEmitter {
     if (changed) this.emitSessions();
   }
 
-  trim() {
+  trim(keep) {
     const now = Date.now();
     let changed = false;
     for (const s of [...this.sessions.values()]) {
@@ -393,7 +408,8 @@ class Hub extends EventEmitter {
     }
     const extra = this.sessions.size - MAX_SESSIONS;
     if (extra > 0) {
-      const old = [...this.sessions.values()].sort((a, b) => rank(b) - rank(a) || a.lastEventAt - b.lastEventAt).slice(0, extra);
+      const old = [...this.sessions.values()].filter((s) => s.id !== keep)
+        .sort((a, b) => rank(b) - rank(a) || a.lastEventAt - b.lastEventAt).slice(0, extra);
       for (const s of old) { this.sessions.delete(s.id); this.drop(s.id); }
       changed = true;
     }

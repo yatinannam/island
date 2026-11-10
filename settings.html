@@ -231,13 +231,13 @@
     <div class="card">
       <div class="row" id="claudeRow">
         <div class="text">
-          <div>Connect Claude Code</div>
+          <div>Claude Code</div>
           <div class="desc" id="claudeNote"></div>
         </div>
         <span class="state" id="claudeState"></span>
-        <button class="switch" id="claude" role="switch" aria-label="Connect Claude Code"></button>
+        <button class="switch" id="claude" role="switch" aria-label="Claude Code"></button>
       </div>
-      <div class="row">
+      <div class="row" id="claudeSoundRow">
         <div class="text">
           <div>Sounds</div>
           <div class="desc">A soft chime when Claude finishes or needs you.</div>
@@ -326,16 +326,24 @@
     $('shelfTitle').textContent = n ? `${n} ${n === 1 ? 'file' : 'files'} on the shelf` : 'Shelf is empty';
     $('shelfClear').disabled = !n;
     $('version').textContent = p.version ? `v${p.version}` : '';
-    const c = p.claude || { status: 'off', available: false, error: '' };
-    setSwitch('claude', c.status === 'on');
-    $('claudeRow').classList.toggle('disabled', !c.available);
+    // On = island's hooks are in Claude Code's settings. Off (the default), the
+    // island has no Claude Code page and nothing of it runs.
+    const c = p.claude || { status: 'off', available: false, installed: false, error: '' };
+    const on = c.status !== 'off';
+    setSwitch('claude', on);
+    $('claudeRow').classList.toggle('disabled', on ? false : !c.available || !c.installed);
+    $('claudeSoundRow').hidden = !on;
     $('claudeNote').textContent = c.error
-      ? `Could not change ~/.claude/settings.json: ${c.error}`
+      ? `Could not change Claude Code’s settings: ${c.error}`
       : c.status === 'on'
         ? 'Sessions show on the island. Ctrl+Alt+J goes to the one that needs you.'
         : c.status === 'other'
-          ? 'Hooks point to another copy of island. Turn on to use this one.'
-          : 'Adds island’s hooks to your Claude Code settings (backed up first).';
+          ? 'Connected to another copy of island. Turn off and on to use this one.'
+          : c.status === 'partial'
+            ? 'Some of island’s hooks are missing. Turn off and on to add them.'
+            : !c.installed
+              ? 'Claude Code is not installed on this PC.'
+              : 'Show what your Claude Code sessions are doing: working, finished, needs you. Adds hooks to Claude Code’s settings (backed up first).';
     setSwitch('claudeSound', v.claudeSound);
     reportSize();
   }
@@ -359,7 +367,7 @@
   });
   $('shelfClear').addEventListener('click', () => window.settings.action('shelf-clear'));
   $('claude').addEventListener('click', () => {
-    window.settings.action(state && state.claude && state.claude.status === 'on' ? 'claude-off' : 'claude-on');
+    window.settings.action(state && state.claude && state.claude.status !== 'off' ? 'claude-off' : 'claude-on');
   });
   $('claudeSound').addEventListener('click', () => window.settings.set({ claudeSound: !(state && state.values.claudeSound) }));
   $('pin').addEventListener('click', () => window.settings.action('pin'));

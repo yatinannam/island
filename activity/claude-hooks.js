@@ -9,8 +9,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const FILE = path.join(os.homedir(), '.claude', 'settings.json');
-const BACKUP = path.join(os.homedir(), '.claude', 'settings.island-backup.json');
+// Claude Code's own setting for where its config lives (default ~/.claude).
+const DIR = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+const FILE = path.join(DIR, 'settings.json');
+const BACKUP = path.join(DIR, 'settings.island-backup.json');
 
 const EVENTS = [
   'UserPromptSubmit',     // working
@@ -66,7 +68,8 @@ function strip(data) {
 }
 
 // 'on' (all hooks, pointing at exe), 'other' (ours, but another islandctl.exe,
-// e.g. a dev copy), 'partial', or 'off'.
+// e.g. a dev copy), 'partial', or 'off'. Without exe (not located yet),
+// all hooks present is 'on'.
 function status(exe) {
   let data;
   try { data = read(); } catch { return 'off'; }
@@ -78,8 +81,14 @@ function status(exe) {
   }
   if (!found.size) return 'off';
   if (EVENTS.some((e) => !found.has(e))) return 'partial';
+  if (!exe) return 'on';
   const same = [...found.values()].every((c) => path.resolve(c).toLowerCase() === path.resolve(exe).toLowerCase());
   return same ? 'on' : 'other';
+}
+
+// No config folder, no Claude Code.
+function installed() {
+  return fs.existsSync(DIR);
 }
 
 function connect(exe) {
@@ -99,4 +108,4 @@ function disconnect() {
   if (strip(data)) write(data);
 }
 
-module.exports = { status, connect, disconnect, FILE, BACKUP, EVENTS };
+module.exports = { status, installed, connect, disconnect, FILE, BACKUP, EVENTS };

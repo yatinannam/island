@@ -75,7 +75,7 @@ Requires Windows 10 1809+ or Windows 11. Your data lives in `%APPDATA%\island` (
 | To | Do this |
 |---|---|
 | Open the island | Rest the cursor on the top-center edge of the screen |
-| Switch between Music, Shelf and Claude Code | Scroll or swipe on the island, or click the dots at the top |
+| Switch between Music, Shelf and Claude Code | Swipe or scroll on the island (the pages follow your fingers), or click the dots at the top |
 | Seek | Click or drag the progress bar |
 | Keep files on the shelf | Drop them on the island (it jumps to the Shelf page) |
 | Use them | Drag a file out into any app; double-click to open it |
@@ -88,7 +88,7 @@ Settings cover Glass or Solid, transparency, song color, open and close delays, 
 
 ## Live activities for Claude Code
 
-Click island's tray icon and turn on **Connect Claude Code**. island adds its hooks to `~/.claude/settings.json` (backed up first; your other hooks, plugins and settings are kept). Turning it off removes exactly those. Running Claude Code sessions pick it up on their own.
+Off by default: without it the island has only Music and Shelf. Click island's tray icon and turn on **Claude Code**. island adds its hooks to `~/.claude/settings.json` (or `%CLAUDE_CONFIG_DIR%settings.json`; backed up first; your other hooks, plugins and settings are kept) and the Claude Code page appears. Turning it off removes exactly those hooks, the page and <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>J</kbd>. Running Claude Code sessions pick it up on their own.
 
 | When a session… | The island |
 |---|---|
@@ -100,7 +100,7 @@ Click island's tray icon and turn on **Connect Claude Code**. island adds its ho
 
 It stays quiet when you are already looking at that session's terminal, and holds peeks while a fullscreen app, a presentation or Do Not Disturb is on, or the PC is locked; they show afterwards without a chime. While the island is open, news slides in as a one-line banner. *Sounds* turns the chimes off.
 
-Peeks show only the project folder, the status and the tool name: never your prompts or code. The events travel from Claude Code to island over a local pipe that only your Windows account can write to. Turn **Connect Claude Code** off before uninstalling island.
+Peeks show only the project folder, the status and the tool name: never your prompts or code. The events travel from Claude Code to island over a local pipe that only your Windows account can write to. Turn **Claude Code** off before uninstalling island.
 
 ## How it works
 
@@ -239,7 +239,7 @@ The renderer extrapolates position as `position + (now − updatedAt)` while pla
 
 <br>
 
-The island never changes size: Music, Shelf and Claude Code are three pages. Scroll or swipe on the island to roll pages, or click the dots at the top. One page per swipe (40 px delta threshold): after a page change, touchpad momentum the same way is ignored while it fades, and a new swipe counts once the deltas kick back in (2.5× the last step and at least 20, from 450 ms after the change) or after a 200 ms pause, because a quick next swipe starts before the last one's momentum has ended. Sideways over an overflowing shelf scrolls the files and a long session list scrolls itself, each until its end, then the page rolls (not on the momentum that carried them there). The shelf dot shows the file count, and the Claude Code dot the number of sessions working or needing you. Every open starts on Music (on Claude Code when opened from a peek); a file dragged over the island switches to Shelf.
+The island never changes size: Music, Shelf and (when it is on) Claude Code are pages. Swipe or scroll on the island, or click the dots at the top. `paging.js` moves the pages with a spring: while the fingers are down it chases their position (critically damped, ×0.75 of the wheel deltas, at most one page), and when they lift (Chromium sends one wheel event with no delta) it settles on the page the position plus the finger speed points to (a quarter page is enough), carrying its speed. One page per swipe: the touchpad's momentum after the lift is ignored; a new swipe counts once the deltas kick back in (2.5× the last step and at least 20) or turn the other way, from 150 ms after the lift, or after a 200 ms pause, because a quick next swipe starts before the last one's momentum has ended. A mouse wheel click (`wheelDelta` a multiple of 120, unlike a touchpad's) is one page. Tuned by replaying 874 recorded touchpad events (25 swipes, all landing where meant). Sideways over an overflowing shelf scrolls the files and a long session list scrolls itself, each until its end, then the pages move (not on the momentum that carried them there). The shelf dot shows the file count, and the Claude Code dot the number of sessions working or needing you. Every open starts on Music (on Claude Code when opened from a peek); a file dragged over the island switches to Shelf.
 
 - **Drop in.** Because the window takes the mouse while the cursor is over the shape, OLE drags from Explorer reach Chromium's drop target. Paths come from `webUtils.getPathForFile()` in the preload. Files without a path (in-memory blobs) are sent as `ArrayBuffer` (≤200 MB) and written to `%APPDATA%\island\shelf-files\<uuid>\<name>`.
 - **Store.** `shelf.js` keeps references, not copies, in `shelf.json` (max 50 items, oldest evicted). Items whose file no longer exists are pruned on open and after drag-out. Only files under `shelf-files` are ever deleted by the app.
@@ -395,10 +395,11 @@ bun run dist         # build the installer
 main.js                   main process: cursor poller, windows, tray, IPC
 preload.js                window.island bridge
 island.html               island renderer: canvas glass, Music, Shelf and Claude Code pages
+paging.js                 page swiping: follows the fingers, settles with a spring
 eq.js                     equalizer bars from system audio loopback
 activity-view.js          live-activity peek pill, Claude Code page, banner, chimes
 activity/hub.js           live-activity sessions and peek rules (main process, named pipe)
-activity/claude-hooks.js  connect/disconnect island's hooks in ~/.claude/settings.json
+activity/claude-hooks.js  the Claude Code switch: island's hooks in ~/.claude/settings.json
 activity/helper.js        compiles and runs islandctl.exe
 activity/islandctl.cs     hook bridge, foreground/DND state, window focus (C# 5)
 settings.html             tray flyout UI
@@ -422,7 +423,7 @@ docs/images/              README images
 - **Multi-monitor:** opening on another display moves the window, which may hit the same input bug as hiding; only single-display setups are tested.
 - **Unsigned binaries:** SmartScreen warns on first run; the tray GUID is per executable path.
 - **Media:** apps that don't publish to Windows' media controls (or publish no timeline) show no progress or seeking; some apps publish the title before the artwork, so art can lag by one event.
-- **Live activities:** jumping brings the terminal window forward, not the exact Windows Terminal tab, and cannot bring forward an Administrator terminal. Claude Code sends no event when a turn is interrupted with Esc, so such a session shows *idle* after 2 min without news. Turn *Connect Claude Code* off before uninstalling; otherwise its hooks keep pointing at the removed `islandctl.exe` (Claude Code reports a non-blocking hook error).
+- **Live activities:** jumping brings the terminal window forward, not the exact Windows Terminal tab, and cannot bring forward an Administrator terminal. Claude Code sends no event when a turn is interrupted with Esc, so such a session shows *idle* after 2 min without news. Turn *Claude Code* off before uninstalling; otherwise its hooks keep pointing at the removed `islandctl.exe` (Claude Code reports a non-blocking hook error).
 
 ## Privacy and security
 

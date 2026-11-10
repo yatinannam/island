@@ -84,6 +84,10 @@ const log = (...a) => { if (DEBUG) console.log('[island]', ...a); };
 const ctl = new Ctl({ exe: app.isPackaged ? path.join(process.resourcesPath, 'islandctl.exe') : null });
 let ctlExe = null;          // resolved path, for the Claude Code hooks
 let claudeError = '';       // last connect/disconnect failure, shown in settings
+// Whether island's hooks are in Claude Code's settings: 'on', 'other' (another
+// copy of island), 'partial' or 'off'. Claude Code is "on" in island when they
+// are there at all; off, nothing of it runs or shows (people without Claude Code).
+let claudeStatus = 'off';
 const hub = new Hub({ ctl, log, sound: () => settings.values.claudeSound });
 let peek = null;            // the peek showing, from hub
 let peekDisplay = null;
@@ -228,13 +232,29 @@ function createWindow() {
   // on while the cursor is over the shape itself.
   win.setIgnoreMouseEvents(true);
   win.loadFile('island.html');
-  win.webContents.once('did-finish-load', () => {
+  let loads = 0;
+  win.webContents.on('did-finish-load', () => {
     ready = true;
     if (process.env.ISLAND_CSS) win.webContents.insertCSS(process.env.ISLAND_CSS); // dev: style overrides for screenshots
-    if (process.argv.includes('--open')) {
+    if (loads++) {
+      // Reloaded after a crash: the page starts closed; bring it back to where main is.
+      if (isOpen) {
+        send('open-page', 0);
+        send('island-state', 'open');
+        sendCapture(current);
+      } else if (peek) {
+        showPeek(peek);
+      }
+    } else if (process.argv.includes('--open')) {
       pinned = true;
       openIsland(screen.getPrimaryDisplay());
     }
+  });
+  // A crashed island page would stay dead (and invisible) until a restart.
+  win.webContents.on('render-process-gone', (_e, details) => {
+    log('island page gone:', details.reason);
+    ready = false;
+    if (details.reason !== 'clean-exit') setTimeout(() => { if (!win.isDestroyed()) win.webContents.reload(); }, 1000);
   });
 }
 
@@ -260,6 +280,7 @@ function openIsland(d, page = 0) {
   send('island-state', 'open');
   hub.setIslandOpen(true); // a showing peek gives way; news comes as banners while open
   refreshTheme();
+  refreshClaude();
   shelf.prune(); // files moved elsewhere since last time drop off
   if (process.env.ISLAND_SHOT) {
     setTimeout(async () => {
@@ -317,11 +338,35 @@ function showPeek(p) {
 }
 
 function activityPayload() {
-  return { connected: ctlExe ? claudeHooks.status(ctlExe) : 'off', sessions: hub.list() };
+  return { connected: claudeStatus, sessions: hub.list() };
 }
 
 function sendActivity() {
   send('activity', activityPayload());
+}
+
+// Re-read on start, after connect/disconnect and each time the island or the
+// flyout opens (the user may edit Claude Code's settings by hand). Starts or
+// stops the hub (the pipe Claude Code's hooks talk to) and Ctrl+Alt+J.
+let jumpKey = null;         // null, 'ours', or 'taken' (another app has it; not retried)
+function refreshClaude() {
+  const was = claudeStatus;
+  claudeStatus = claudeHooks.status(ctlExe);
+  const on = claudeStatus !== 'off';
+  if (on && !hub.running) hub.start();
+  else if (!on && hub.running) hub.stop();
+  if (on && !jumpKey) {
+    // the Claude session that needs you
+    jumpKey = registerShortcut('Control+Alt+J', () => hub.jumpLatest()) ? 'ours' : 'taken';
+  } else if (!on && jumpKey) {
+    if (jumpKey === 'ours') globalShortcut.unregister('Control+Alt+J');
+    jumpKey = null;
+  }
+  if (claudeStatus !== was) {
+    log('claude code', claudeStatus);
+    sendActivity();
+    sendSettings();
+  }
 }
 
 function inHotZone(p, d) {
@@ -418,8 +463,9 @@ function settingsPayload() {
     shelfCount: shelf.items.length,
     version: app.getVersion(),
     claude: {
-      status: ctlExe ? claudeHooks.status(ctlExe) : 'off',
+      status: claudeStatus,
       available: !!ctlExe,
+      installed: claudeHooks.installed(),
       error: claudeError,
     },
   };
@@ -492,6 +538,7 @@ function showSettings() {
   clearTimeout(settingsHideTimer); // shown again while fading out
   settingsHideTimer = null;
   refreshTrayShown();
+  refreshClaude();
   sendSettings();
   placeSettings();
   settingsShownAt = Date.now();
@@ -577,9 +624,9 @@ function createTray() {
 }
 
 function registerShortcut(accel, fn) {
-  if (!globalShortcut.register(accel, fn)) {
-    console.warn(`[island] could not register ${accel}, another app is using it`);
-  }
+  if (globalShortcut.register(accel, fn)) return true;
+  console.warn(`[island] could not register ${accel}, another app is using it`);
+  return false;
 }
 
 // ---- IPC -------------------------------------------------------------------
@@ -694,17 +741,18 @@ ipcMain.on('settings-action', (_e, action) => {
     setPromoted(TRAY_GUID, action.endsWith('-on')).then(refreshTrayShown);
   } else if (action === 'shelf-clear') {
     shelf.clear();
-  } else if ((action === 'claude-on' || action === 'claude-off') && ctlExe) {
+  } else if ((action === 'claude-on' && ctlExe) || action === 'claude-off') {
     try {
       if (action === 'claude-on') claudeHooks.connect(ctlExe);
       else claudeHooks.disconnect();
       claudeError = '';
-      log('claude hooks', action, claudeHooks.status(ctlExe));
+      log('claude hooks', action);
     } catch (e) {
       // e.g. settings.json that is not valid JSON: left untouched
       claudeError = e.message;
       log('claude hooks failed:', e.message);
     }
+    refreshClaude();
     sendSettings();
     sendActivity();
   }
@@ -759,9 +807,9 @@ app.whenReady().then(async () => {
   createSettingsWindow();
   if (process.argv.includes('--settings')) settingsWin.webContents.once('did-finish-load', () => setTimeout(showSettings, 300));
   media.start();
-  ctl.path().then((exe) => { ctlExe = exe; sendSettings(); sendActivity(); })
+  refreshClaude(); // starts the hub when Claude Code is on
+  ctl.path().then((exe) => { ctlExe = exe; refreshClaude(); sendSettings(); })
     .catch((e) => log('islandctl unavailable:', e.message));
-  hub.start();
   powerMonitor.on('lock-screen', () => { screenLocked = true; updateLocked(); });
   powerMonitor.on('unlock-screen', () => { screenLocked = false; updateLocked(); });
   powerMonitor.on('suspend', () => { suspended = true; updateLocked(); });
@@ -769,7 +817,6 @@ app.whenReady().then(async () => {
   setInterval(tick, TICK_MS);
   registerShortcut('Control+Alt+I', togglePinned);
   registerShortcut('Control+Alt+Q', () => app.quit());
-  registerShortcut('Control+Alt+J', () => hub.jumpLatest()); // the Claude session that needs you
   nativeTheme.on('updated', refreshTheme);
   const displaysChanged = () => {
     sourceIds.clear();

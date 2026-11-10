@@ -29,6 +29,7 @@
       "preload.js",
       "settings-preload.js",
       "island.html",
+      "paging.js",
       "eq.js",
       "activity-view.js",
       "activity/hub.js",

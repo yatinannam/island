@@ -2,7 +2,9 @@
 // banner shown while the island is open. Main (activity/hub.js) decides what
 // shows and when; this only draws it, plays the chimes and reports clicks.
 // Loaded after island.html's own script, whose globals it uses ($, body,
-// setPage, renderDots, activityBadge, kick, stopCapture, stopTimer).
+// page, pager, renderDots, activityBadge, kick, stopCapture, stopTimer).
+// With Claude Code off in settings (island's hooks not in Claude Code's
+// settings) the page and its dot are gone and nothing here shows.
 (() => {
   const ICONS = {
     ok: '<svg class="ic ic-ok" viewBox="0 0 16 16"><circle class="f" cx="8" cy="8" r="7"/><path d="M4.9 8.3 7 10.4l4.1-4.6"/></svg>',
@@ -196,10 +198,13 @@
     const needs = sessions.filter((s) => s.state === 'needs').length;
     $('actSummary').textContent = [needs && `${needs} need${needs === 1 ? 's' : ''} you`, working && `${working} working`].filter(Boolean).join(' · ');
     $('act').classList.toggle('act-none', !sessions.length);
-    $('actEmpty').innerHTML = activity.connected === 'off' || activity.connected === 'partial'
-      ? 'Not connected<small>Turn on Connect Claude Code in island settings</small>'
+    $('actEmpty').innerHTML = activity.connected === 'partial'
+      ? 'Not fully connected<small>Turn Claude Code off and on in island settings</small>'
       : 'No sessions yet<small>Claude Code sessions show up here</small>';
-    activityBadge = { n: working + needs, warn: needs > 0 };
+    const on = activity.connected !== 'off';
+    body.classList.toggle('no-claude', !on);
+    pager.setCount(on ? 3 : 2);
+    activityBadge = on ? { n: working + needs, warn: needs > 0 } : { n: 0, warn: false };
     renderDots();
   }
 
