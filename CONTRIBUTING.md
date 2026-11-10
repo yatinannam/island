@@ -33,9 +33,11 @@ There is no automated UI test suite yet; changes are verified on a real Windows 
 - `ISLAND_DEBUG=1` logs open/close (with cursor coordinates), presses on the island, media state and shelf events to stdout.
 - `ISLAND_SHOT=out.png bun run dev` saves a capture of the island page 1.8 s after opening. In glass mode the island is excluded from normal screenshots, so composite this capture over a screenshot of the region behind it to see the real result.
 - `ISLAND_CSS="..."` injects CSS into the island page, e.g. to force a state for a screenshot.
+- `paging.js` has no DOM and loads in Node: feed it wheel events (`{ t, dx, dy, notch }`, a zero-delta event when the fingers lift) and frames to check swipe changes without a touchpad.
+- `CLAUDE_CONFIG_DIR=<empty folder>` makes island treat that folder as Claude Code's config, so the Claude Code switch can be tested without touching `~/.claude`.
 - Scripted mouse tests (`SetCursorPos` + `mouse_event`) work, but place clicks on spots that are harmless on every page: a missed page switch otherwise lands on media controls and changes someone's playback.
 
-Before opening a PR, check by hand: hover open/close, play/pause/next/seek (click and drag), page roll by wheel and dots, drop in from Explorer, drag out (single, multi-select, drag all), double-click to open, settings flyout, and glass vs. solid. Say in the PR which of these you tested and which you could not.
+Before opening a PR, check by hand: hover open/close, play/pause/next/seek (click and drag), page swipes (touchpad, both directions, and mouse wheel) and dots, the Claude Code switch on and off, drop in from Explorer, drag out (single, multi-select, drag all), double-click to open, settings flyout, and glass vs. solid. Say in the PR which of these you tested and which you could not.
 
 ## Pull requests
 

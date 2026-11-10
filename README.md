@@ -37,7 +37,7 @@
 <td width="50%" valign="top">
 <img src="docs/images/claude-code.png" alt="Claude Code page: one session needs you, one working, one finished">
 <h3>Live activities for Claude Code</h3>
-<p>Every Claude Code session on one page: working (with elapsed time), needs you, finished. Windows has no Live Activities for apps; island builds them from Claude Code hooks.</p>
+<p>Every Claude Code session on one page: working (with elapsed time), needs you, finished. Windows has no Live Activities for apps; island builds them from Claude Code hooks. Optional: off until you turn on <i>Claude Code</i> in settings, so without it the island is just Music and Shelf.</p>
 </td>
 <td width="50%" valign="top">
 <img src="docs/images/peek-finished.png" alt="Peek pill: island finished, 2m 14s">
@@ -51,7 +51,7 @@
 **And also**
 
 - **Real glass.** The island blurs whatever is behind it like Windows' own acrylic, tinted by the song's artwork. It follows your light/dark theme and the *Transparency effects* switch; a Solid look is one click away.
-- **Feels physical.** Opening, closing and page changes run on simulated springs, and the island grows out of the top edge with concave "ears", like a notch.
+- **Feels physical.** Opening, closing and page changes run on simulated springs; swipe on the island and the pages follow your fingers, then settle on the next page. The island grows out of the top edge with concave "ears", like a notch.
 - **Stays out of your way.** It never takes focus from the app you are typing in, lets every click through while closed, and holds its peeks while you watch something fullscreen or have Do Not Disturb on.
 - **Light.** About 1.5% of one CPU core while idle, no network requests, everything stays on your PC.
 
