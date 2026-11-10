@@ -5,7 +5,7 @@
 //
 // Rules (decided with Yatin):
 // - Working: no peek, only listed. Finished: peek for 5s, only if the turn
-//   ran 20s or more and its terminal is not the foreground window.
+//   ran 10s or more and its terminal is not the foreground window.
 // - Needs you (permission prompt, waiting for input, a question): peek always,
 //   stays until that session moves on, the peek is clicked or dismissed.
 // - Subagent finished: counted on the session, no peek.
@@ -23,7 +23,7 @@ const path = require('path');
 const { EventEmitter } = require('events');
 
 const FINISHED_PEEK_MS = 5000;
-const MIN_TURN_MS = 20000;
+const MIN_TURN_MS = 10000;
 const YIELD_MS = 5000;          // a needs-you peek gives way to waiting peeks after this
 const GAP_MS = 350;             // between two peeks, so one retracts before the next drops
 const MAX_HELD_MS = 30 * 60 * 1000;
