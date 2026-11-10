@@ -4,14 +4,9 @@
 
 # island
 
-**A Dynamic Island for Windows.**<br>
-Rest your cursor on the top edge of the screen: music, a file shelf and live Claude Code activity spring out of the bezel.
+**A Dynamic Island for Windows.**<br>Rest your cursor on the top edge of the screen: music, a file shelf and live Claude Code activity spring out of the bezel.
 
-[![Latest release](https://img.shields.io/github/v/release/yatinannam/island?style=flat-square&label=release&color=2b2b30)](https://github.com/yatinannam/island/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/yatinannam/island/total?style=flat-square&color=2b2b30)](https://github.com/yatinannam/island/releases)
-![Windows 10 and 11](https://img.shields.io/badge/Windows-10%20%7C%2011-2b2b30?style=flat-square)
-![Electron 45](https://img.shields.io/badge/Electron-45-2b2b30?style=flat-square&logo=electron&logoColor=white)
-[![MIT license](https://img.shields.io/github/license/yatinannam/island?style=flat-square&color=2b2b30)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/yatinannam/island?style=flat-square&label=release&color=2b2b30)](https://github.com/yatinannam/island/releases/latest) [![Downloads](https://img.shields.io/github/downloads/yatinannam/island/total?style=flat-square&color=2b2b30)](https://github.com/yatinannam/island/releases) ![Windows 10 and 11](https://img.shields.io/badge/Windows-10%20%7C%2011-2b2b30?style=flat-square) ![Electron 45](https://img.shields.io/badge/Electron-45-2b2b30?style=flat-square&logo=electron&logoColor=white) [![MIT license](https://img.shields.io/github/license/yatinannam/island?style=flat-square&color=2b2b30)](LICENSE)
 
 [**Download for Windows**](https://github.com/yatinannam/island/releases/latest) &nbsp;·&nbsp; [Features](#features) &nbsp;·&nbsp; [Claude Code](#live-activities-for-claude-code) &nbsp;·&nbsp; [How it works](#how-it-works) &nbsp;·&nbsp; [Build](#build-from-source)
 
