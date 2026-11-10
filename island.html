@@ -1085,22 +1085,30 @@
   // change, and scrolling past the last page neither builds up nor re-arms the
   // cooldown; before, that momentum held off a swipe back for up to ~1s.
   let wheelAcc = 0, wheelCool = 0, wheelIdle = 0, wheelDir = 0;
+  let actsScrolledAt = 0;
+  $('actList').addEventListener('scroll', () => { actsScrolledAt = performance.now(); });
   addEventListener('wheel', (e) => {
     if (!body.classList.contains('open')) return;
     const sideways = Math.abs(e.deltaX) > Math.abs(e.deltaY);
     const tiles = $('tiles');
     if (sideways && page === 1 && e.target.closest('.tiles') && tiles.scrollWidth > tiles.clientWidth) return;
-    // A long session list scrolls itself until its end, then the page rolls.
+    // A long session list scrolls itself until its end, then the page rolls,
+    // but not on the momentum that carried the list to its end.
     const acts = $('actList');
     if (!sideways && page === 2 && e.target.closest('.act-list') && acts.scrollHeight > acts.clientHeight) {
       const atEnd = e.deltaY < 0 ? acts.scrollTop <= 0 : acts.scrollTop + acts.clientHeight >= acts.scrollHeight - 1;
       if (!atEnd) return;
+      if (performance.now() - actsScrolledAt < 300) { e.preventDefault(); actsScrolledAt = performance.now(); return; }
     }
     e.preventDefault();
     const d = sideways ? e.deltaX : e.deltaY;
     const dir = Math.sign(d);
     if (!dir) return;
-    if (dir === wheelDir && performance.now() < wheelCool) return; // momentum of the last swipe
+    // Momentum of the last swipe: blocked for as long as it keeps coming (it
+    // outlasts a fixed cooldown, and with three pages it skipped one); a new
+    // swipe that way works after a 200 ms pause.
+    const tNow = performance.now();
+    if (dir === wheelDir && tNow < wheelCool) { wheelCool = Math.max(wheelCool, tNow + 200); return; }
     const next = Math.max(0, Math.min(LAST_PAGE, page + dir));
     if (next === page) { wheelAcc = 0; return; }   // no page that way
     if (Math.sign(wheelAcc) !== dir) wheelAcc = 0;  // direction changed: a new gesture

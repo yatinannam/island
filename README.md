@@ -43,7 +43,7 @@ A macOS-style "notch" island for Windows 10/11, built on Electron. Rest the curs
 - **Live equalizer**: the four bars next to the title move with the sound actually playing (bass to treble).
 - **Glass material** matching Windows acrylic (blur, luminosity, tint, noise), tinted by the current artwork ("song color"), following the system theme and the *Transparency effects* switch. A solid mode is available.
 - **File shelf** on a second page: drop files, folders or in-memory blobs (e.g. images from a browser) on the island, drag them back out into any app; multi-select by long press or Ctrl+click.
-- **Live activities for Claude Code** on a third page, and as "peeks": when a Claude Code session finishes a long turn or needs you (a permission prompt, waiting for input), the closed island drops a small pill on its own, with a soft chime. Click it, or press Ctrl+Alt+J, to jump to that terminal. Windows has no Live Activities API for apps; island builds one from Claude Code hooks.
+- **Live activities for Claude Code** on a third page, and as "peeks": when a Claude Code session finishes a long turn or needs you (a permission prompt or a question), the closed island drops a small pill on its own, with a soft chime. Click it, or press Ctrl+Alt+J, to jump to that terminal. Windows has no Live Activities API for apps; island builds one from Claude Code hooks.
 - **Tray flyout** for settings, rendered with the native acrylic backdrop and the Windows accent color.
 
 ## Install
@@ -169,7 +169,7 @@ The bars follow the system audio, loaded as a separate script after the island's
 
 ## File shelf
 
-The shelf is the island's second page; the island never changes size. Scroll on the island to roll pages (one page per gesture, 40 px delta threshold, 450 ms cooldown; sideways scroll over an overflowing shelf scrolls the tiles), or click the dots at the top. The shelf dot shows the file count while the music page is visible. Every open starts on Music; a file dragged over the island switches to Shelf.
+The shelf is the island's second page; the island never changes size. Scroll on the island to roll pages (one page per gesture, 40 px delta threshold; touchpad momentum in the same direction is ignored until it pauses for 200 ms, at least 450 ms; sideways scroll over an overflowing shelf scrolls the tiles), or click the dots at the top. The shelf dot shows the file count while the music page is visible. Every open starts on Music; a file dragged over the island switches to Shelf.
 
 - **Drop in.** Because the window takes the mouse while the cursor is over the shape, OLE drags from Explorer reach Chromium's drop target. Paths come from `webUtils.getPathForFile()` in the preload. Files without a path (in-memory blobs) are sent as `ArrayBuffer` (≤200 MB) and written to `%APPDATA%\island\shelf-files\<uuid>\<name>`.
 - **Store.** `shelf.js` keeps references, not copies, in `shelf.json` (max 50 items, oldest evicted). Items whose file no longer exists are pruned on open and after drag-out. Only files under `shelf-files` are ever deleted by the app.
@@ -195,9 +195,10 @@ flowchart LR
 ```
 
 1. **`islandctl.exe`** (`activity/islandctl.cs`, C# 5, GUI subsystem so it never flashes a console). `hook` reads the hook JSON, keeps only a few top-level string fields (a small scanner skips `tool_input` / `tool_response`), finds the Claude process (first non-shell ancestor) and its terminal window (`AttachConsole` + `GetConsoleWindow`; in Windows Terminal that is a hidden pseudo-console window owned by the terminal's window, so `GetAncestor(GA_ROOTOWNER)`), and writes one line to the pipe. It never prints, always exits 0, and gives up at once when no island is listening. About 85 ms per run, in the background.
-2. **Hooks used.** `UserPromptSubmit` (working), `Stop` / `StopFailure` (finished / ended on an error), `Notification` (`permission_prompt`, `idle_prompt`, `elicitation_dialog`: needs you), `PermissionRequest` (which tool the prompt is for), `PostToolUse` / `PostToolUseFailure` / `PermissionDenied` (Claude moved on: clears needs-you), `SubagentStop` (counted), `SessionEnd`.
+2. **Hooks used.** `UserPromptSubmit` (working), `Stop` / `StopFailure` (finished / ended on an error), `Notification` (`permission_prompt`, `elicitation_dialog`: needs you; `idle_prompt`, Claude's "still waiting" reminder a minute after it finished, is ignored: that session is just finished), `PermissionRequest` (which tool the prompt is for), `PostToolUse` / `PostToolUseFailure` / `PermissionDenied` (Claude moved on: clears needs-you), `SubagentStop` (counted), `SessionEnd`.
 3. **Hub.** One session per `session_id`, labelled by the project folder (`island`, `island 2` for a second session in the same folder). A session ends as *closed* when its Claude process exits. Peeks follow these rules:
-   - *Finished* peeks for 5 s, only if the turn took 10 s or more and its terminal is not the foreground window. *Needs you* always peeks and stays until that session moves on, the pill is clicked, or dismissed with its x.
+   - *Finished* peeks for 5 s, only if the turn took 10 s or more and its terminal is not the foreground window. *Needs you* always peeks and stays until that session moves on, the pill is clicked, or dismissed with its x. A row's x on the Activity page removes the session in any state; it comes back with its next event.
+   - If island starts during a turn (an update, a restart), the first tool, permission or subagent event of a session not known to be working starts the turn, so its finish still peeks.
    - One at a time, needs-you first; a needs-you pill gives way to waiting peeks after 5 s and comes back.
    - Held while `SHQueryUserNotificationState` reports a fullscreen app, presentation or quiet time, while Do Not Disturb is on (the shell's quiet-hours WNF state; the notification state does not show it), and while the PC is locked or asleep. Held peeks show afterwards without a chime; after 30 min they are only listed.
    - While the island is open, news comes as a one-line banner instead.
