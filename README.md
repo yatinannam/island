@@ -65,7 +65,7 @@
 > The installer is not code-signed, so SmartScreen may show *Windows protected your PC*: choose *More info* → *Run anyway*. Check the download against the SHA-256 in the release notes first:
 >
 > ```powershell
-> Get-FileHash .\island-setup-0.2.4.exe -Algorithm SHA256
+> Get-FileHash .\island-setup-0.3.0.exe -Algorithm SHA256
 > ```
 
 Requires Windows 10 1809+ or Windows 11. Your data lives in `%APPDATA%\island` (`settings.json`, `shelf.json`, `shelf-files\`); uninstalling (*Settings → Apps*) leaves it in place.
