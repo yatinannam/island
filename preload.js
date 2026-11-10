@@ -22,4 +22,13 @@ contextBridge.exposeInMainWorld('island', {
   shelfClear: () => ipcRenderer.send('shelf-clear'),
   shelfOpen: (id) => ipcRenderer.send('shelf-open', String(id)),
   shelfDrag: (ids) => ipcRenderer.send('shelf-drag', ids.map(String)),
+  // Live activities (Claude Code)
+  onOpenPage: listen('open-page'),
+  onPeek: listen('peek'),
+  onBanner: listen('banner'),
+  onActivity: listen('activity'),
+  peekClick: (id) => ipcRenderer.send('peek-click', String(id)),
+  peekDismiss: (id) => ipcRenderer.send('peek-dismiss', String(id)),
+  activityJump: (id) => ipcRenderer.send('activity-jump', String(id)),
+  activityDismiss: (id) => ipcRenderer.send('activity-dismiss', String(id)),
 });

@@ -1,8 +1,10 @@
-// Compiles media/smtc.cs to media/bin/smtc.exe so the installer can ship it.
-const { build } = require('../media/helper');
+// Compiles the C# helpers so the installer can ship them:
+// media/smtc.cs -> media/bin/smtc.exe, activity/islandctl.cs -> activity/bin/islandctl.exe
+const media = require('../media/helper');
+const activity = require('../activity/helper');
 
-build()
-  .then((exe) => console.log(`built ${exe}`))
+Promise.all([media.build(), activity.build()])
+  .then((exes) => exes.forEach((exe) => console.log(`built ${exe}`)))
   .catch((e) => {
     console.error(e.message);
     process.exit(1);

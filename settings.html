@@ -226,6 +226,26 @@
         <button class="btn" id="shelfClear">Clear</button>
       </div>
     </div>
+
+    <h2>Claude Code</h2>
+    <div class="card">
+      <div class="row" id="claudeRow">
+        <div class="text">
+          <div>Connect Claude Code</div>
+          <div class="desc" id="claudeNote"></div>
+        </div>
+        <span class="state" id="claudeState"></span>
+        <button class="switch" id="claude" role="switch" aria-label="Connect Claude Code"></button>
+      </div>
+      <div class="row">
+        <div class="text">
+          <div>Sounds</div>
+          <div class="desc">A soft chime when Claude finishes or needs you.</div>
+        </div>
+        <span class="state" id="claudeSoundState"></span>
+        <button class="switch" id="claudeSound" role="switch" aria-label="Claude Code sounds"></button>
+      </div>
+    </div>
   </div>
 
   <footer id="foot">
@@ -306,6 +326,17 @@
     $('shelfTitle').textContent = n ? `${n} ${n === 1 ? 'file' : 'files'} on the shelf` : 'Shelf is empty';
     $('shelfClear').disabled = !n;
     $('version').textContent = p.version ? `v${p.version}` : '';
+    const c = p.claude || { status: 'off', available: false, error: '' };
+    setSwitch('claude', c.status === 'on');
+    $('claudeRow').classList.toggle('disabled', !c.available);
+    $('claudeNote').textContent = c.error
+      ? `Could not change ~/.claude/settings.json: ${c.error}`
+      : c.status === 'on'
+        ? 'Sessions show on the island. Ctrl+Alt+J goes to the one that needs you.'
+        : c.status === 'other'
+          ? 'Hooks point to another copy of island. Turn on to use this one.'
+          : 'Adds island’s hooks to your Claude Code settings (backed up first).';
+    setSwitch('claudeSound', v.claudeSound);
     reportSize();
   }
 
@@ -327,6 +358,10 @@
     window.settings.action(state && state.trayShown ? 'tray-shown-off' : 'tray-shown-on');
   });
   $('shelfClear').addEventListener('click', () => window.settings.action('shelf-clear'));
+  $('claude').addEventListener('click', () => {
+    window.settings.action(state && state.claude && state.claude.status === 'on' ? 'claude-off' : 'claude-on');
+  });
+  $('claudeSound').addEventListener('click', () => window.settings.set({ claudeSound: !(state && state.values.claudeSound) }));
   $('pin').addEventListener('click', () => window.settings.action('pin'));
   $('quit').addEventListener('click', () => window.settings.action('quit'));
   addEventListener('keydown', (e) => { if (e.key === 'Escape') window.settings.action('hide'); });

@@ -11,6 +11,9 @@
     /* Collapsed size: a sliver tucked into the top edge */
     --cw: 150px;
     --ch: 0px;
+    /* Live-activity peek pill: must match PEEK_W / PEEK_H in main.js */
+    --pw: 300px;
+    --ph: 40px;
     --r: 32px;    /* bottom corner radius when open; must match R in the script */
     --accent: #a9b8ff;
     /* Overwritten by the spring generator below */
@@ -29,8 +32,19 @@
     --eq-top: #ffffff;
     --eq-bottom: rgba(255, 255, 255, 0.55);
     --divider: rgba(255, 255, 255, 0.08);
+    /* Live-activity status colors */
+    --ok: #30d158;
+    --warn: #ff9f0a;
+    --err: #ff453a;
+    --on-status: rgba(0, 0, 0, 0.82);
+    --banner: rgba(58, 58, 62, 0.94);
   }
   body.light {
+    --ok: #28a745;
+    --warn: #e07c00;
+    --err: #e5323b;
+    --on-status: #fff;
+    --banner: rgba(255, 255, 255, 0.95);
     --label: #1c1c1e;
     --label-2: rgba(60, 60, 67, 0.68);
     --label-3: rgba(60, 60, 67, 0.48);
@@ -64,6 +78,13 @@
     transition-property: width, height;
     transition-duration: var(--dur-close);
     transition-timing-function: var(--ease-close);
+  }
+  /* A live-activity peek: the closed island drops a small pill on its own.
+     Before .open .island, so opening from a peek wins. */
+  .peek .island {
+    width: var(--pw); height: var(--ph);
+    transition-duration: var(--dur-open);
+    transition-timing-function: var(--ease-open);
   }
   .open .island {
     width: var(--w); height: var(--h);
@@ -181,7 +202,7 @@
 
   /* ===== Pages: Music and Shelf side by side; scrolling on the island rolls between them ===== */
   .pages {
-    position: absolute; inset: 0; display: flex; width: calc(var(--w) * 2);
+    position: absolute; inset: 0; display: flex; width: calc(var(--w) * 3);
     transform: translateX(calc(var(--page, 0) * var(--w) * -1));
     transition: transform var(--dur-page, 420ms) var(--ease-page, ease);
   }
@@ -200,6 +221,7 @@
   .dots button.on { width: 16px; background: var(--fill); }
   .dots button.count { width: auto; min-width: 10px; height: 10px; padding: 0 3px; margin-top: -2.5px; background: var(--label-2); }
   body.light .dots button.count { color: #fff; }
+  .dots button.count.warn { background: var(--warn); color: var(--on-status); }
 
   /* ===== File shelf page ===== */
   .shelf { position: relative; height: 100%; }
@@ -278,6 +300,81 @@
   .dropzone svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   .drag-over .dropzone { opacity: 1; border-color: var(--label-2); }
   .drag-over .tiles, .drag-over .shelf-actions, .drag-over .empty { opacity: 0.1; }
+
+  /* ===== Live activities (Claude Code) ===== */
+  /* Status icons: 14px circles; the spinner only turns while it can be seen */
+  .ic { width: 14px; height: 14px; flex: none; display: block; }
+  .ic circle.f { stroke: none; }
+  .ic path { fill: none; stroke: var(--on-status); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .ic-ok circle.f { fill: var(--ok); }
+  .ic-warn circle.f { fill: var(--warn); }
+  .ic-err circle.f { fill: var(--err); }
+  .ic-dim circle { fill: none; stroke: var(--label-3); stroke-width: 1.6; }
+  .ic-spin circle { fill: none; stroke: var(--label-3); stroke-width: 1.8; }
+  .ic-spin path { stroke: var(--label); }
+  .open .ic-spin { animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* The pill a peek shows: icon, project, status, duration or tool; x on hover */
+  .pill {
+    position: absolute; top: 0; left: 50%; width: var(--pw); height: var(--ph); transform: translateX(-50%);
+    display: flex; align-items: center; gap: 7px; padding: 0 16px 1px; box-sizing: border-box;
+    font-size: 12.5px; white-space: nowrap;
+    opacity: 0; filter: blur(4px); pointer-events: none;
+    transition: opacity 110ms ease, filter 110ms ease;
+  }
+  .peek:not(.open) .pill {
+    opacity: 1; filter: none; pointer-events: auto;
+    transition: opacity 200ms ease 90ms, filter 200ms ease 90ms;
+  }
+  .pill-label { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .pill-status { flex: none; color: var(--label-2); }
+  .pill-detail { flex: none; margin-left: auto; padding-left: 4px; color: var(--label-3); font-variant-numeric: tabular-nums; }
+  .pill-x { display: none; flex: none; width: 22px; height: 22px; margin: 0 -6px 0 auto; color: var(--label-2); }
+  .pill-x svg, .act-row button svg { width: 9px; height: 9px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+  .pill:hover .pill-detail { display: none; }
+  .pill:hover .pill-x { display: grid; }
+
+  /* While the island is open, news arrives as a one-line banner over the top
+     of the page; nothing under the cursor moves */
+  .banner {
+    position: absolute; top: 4px; left: 50%; z-index: 3; max-width: 320px;
+    display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; box-sizing: border-box;
+    border-radius: 12px; background: var(--banner); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+    font-size: 11.5px; white-space: nowrap; pointer-events: none;
+    opacity: 0; transform: translate(-50%, -32px);
+    transition: transform 260ms var(--ease-close), opacity 160ms ease;
+  }
+  .banner.on { opacity: 1; transform: translate(-50%, 0); transition: transform var(--dur-open) var(--ease-open), opacity 160ms ease; }
+  .banner b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+  .banner span { color: var(--label-2); flex: none; }
+
+  /* Activity page: one row per Claude Code session */
+  .act { position: relative; height: 100%; }
+  .act-head { display: flex; align-items: center; gap: 6px; height: 26px; margin-top: -2px; }
+  .act-head strong { font-size: 13.5px; font-weight: 600; }
+  .act-head span { flex: 1; font-size: 12px; color: var(--label-3); }
+  .act-list { position: absolute; left: -10px; right: -10px; top: 28px; bottom: 4px; overflow-y: auto; scrollbar-width: none; }
+  .act-list::-webkit-scrollbar { display: none; }
+  .act-row { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 6px 0 10px; border-radius: 9px; font-size: 12.5px; white-space: nowrap; }
+  .act-row:hover { background: var(--hover); }
+  .act-row.jump { cursor: pointer; }
+  .act-row .i { display: contents; }
+  .act-row .name { flex: none; max-width: 130px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+  .act-row .what { flex: 1; min-width: 0; color: var(--label-2); overflow: hidden; text-overflow: ellipsis; }
+  .act-row .when { flex: none; padding-right: 4px; color: var(--label-3); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+  .act-row button { display: none; flex: none; width: 24px; height: 24px; color: var(--label-2); }
+  .act-row button svg.go { width: 11px; height: 11px; stroke-width: 1.8; stroke-linejoin: round; }
+  .act-row:hover button { display: grid; }
+  .act-row:hover .when { display: none; }
+  .act-empty {
+    position: absolute; left: -8px; right: -8px; top: 34px; height: 76px;
+    display: none; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    border: 1.5px dashed var(--label-3); border-radius: 16px;
+    font-size: 12.5px; color: var(--label-2); text-align: center; pointer-events: none;
+  }
+  .act-empty small { font-size: 11.5px; color: var(--label-3); }
+  .act-none .act-empty { display: flex; }
 </style>
 </head>
 <body class="idle">
@@ -285,7 +382,8 @@
   <div class="island" id="island">
     <div class="shape" id="shape">
       <div class="content">
-        <div class="dots"><button id="dot0" title="Music"></button><button id="dot1" title="Shelf"></button></div>
+        <div class="dots"><button id="dot0" title="Music"></button><button id="dot1" title="Shelf"></button><button id="dot2" title="Claude Code"></button></div>
+        <div class="banner" id="banner"></div>
         <div class="pages" id="pages">
         <section class="pg" id="pgMusic">
         <div class="row">
@@ -343,7 +441,21 @@
           </div>
         </div>
         </section>
+        <section class="pg away" id="pgActivity">
+        <div class="act" id="act">
+          <div class="act-head"><strong>Claude Code</strong><span id="actSummary"></span></div>
+          <div class="act-list" id="actList"></div>
+          <div class="act-empty" id="actEmpty"></div>
         </div>
+        </section>
+        </div>
+      </div>
+      <div class="pill" id="pill">
+        <span id="pillIcon"></span>
+        <span class="pill-label" id="pillLabel"></span>
+        <span class="pill-status" id="pillStatus"></span>
+        <span class="pill-detail" id="pillDetail"></span>
+        <button class="pill-x" id="pillX" title="Dismiss"><svg viewBox="0 0 10 10"><path d="M2 2l6 6M8 2 2 8"/></svg></button>
       </div>
     </div>
   </div>
@@ -575,7 +687,7 @@
     } else {
       still++;
     }
-    const visible = body.classList.contains('open') || r.height >= 0.5;
+    const visible = body.classList.contains('open') || body.classList.contains('peek') || r.height >= 0.5;
     if (visible && still < 6) {
       requestAnimationFrame(frame);
     } else if (visible) {
@@ -651,7 +763,7 @@
       const onFrame = () => {
         if (cap !== mine) return;
         // After closing the stream stays up briefly for a quick re-open; skip the work.
-        if (body.classList.contains('open')) buildBlur();
+        if (body.classList.contains('open') || body.classList.contains('peek')) buildBlur();
         video.requestVideoFrameCallback(onFrame);
       };
       video.requestVideoFrameCallback(onFrame);
@@ -838,9 +950,14 @@
     kick();
   }
 
+  let openPage = 0; // set by main right before an open (Activity when opened from a peek)
+  window.island.onOpenPage((p) => { openPage = Number(p) || 0; });
+
   window.island.onState((s) => {
     if (s === 'open') {
-      setPage(0); // always opens on music; dragging a file in switches to the shelf
+      // Opens on music (or Activity from a peek); dragging a file in switches to the shelf.
+      setPage(openPage);
+      openPage = 0;
       // Two frames so the collapsed state is committed before the transition starts.
       requestAnimationFrame(() => requestAnimationFrame(() => {
         body.classList.add('open');
@@ -919,7 +1036,9 @@
   let shelfItems = [];
   let dragDepth = 0;
   let draggingOut = false; // our own drag-out passing back over the island
-  let page = 0;            // 0 = music, 1 = shelf
+  let page = 0;            // 0 = music, 1 = shelf, 2 = activity
+  const LAST_PAGE = 2;
+  let activityBadge = { n: 0, warn: false }; // set by activity-view.js
 
   // The island keeps its size: the shelf is a page, not an extra row.
   function updateShelfSize() {
@@ -933,23 +1052,31 @@
   // ===== Pages ===============================================================
 
   function setPage(p) {
-    page = Math.max(0, Math.min(1, p));
+    page = Math.max(0, Math.min(LAST_PAGE, p));
     document.documentElement.style.setProperty('--page', page);
     $('pgMusic').classList.toggle('away', page !== 0);
     $('pgShelf').classList.toggle('away', page !== 1);
+    $('pgActivity').classList.toggle('away', page !== 2);
     renderDots();
   }
 
   function renderDots() {
     $('dot0').classList.toggle('on', page === 0);
     $('dot1').classList.toggle('on', page === 1);
+    $('dot2').classList.toggle('on', page === 2);
     const n = page === 0 ? shelfItems.length : 0;
     $('dot1').classList.toggle('count', n > 0);
     $('dot1').textContent = n > 0 ? String(n) : '';
+    // Claude sessions working or waiting on you, from the other pages
+    const a = page !== 2 ? activityBadge.n : 0;
+    $('dot2').classList.toggle('count', a > 0);
+    $('dot2').classList.toggle('warn', a > 0 && activityBadge.warn);
+    $('dot2').textContent = a > 0 ? String(a) : '';
   }
 
   $('dot0').addEventListener('click', () => setPage(0));
   $('dot1').addEventListener('click', () => setPage(1));
+  $('dot2').addEventListener('click', () => setPage(2));
 
   // One page per scroll gesture. Sideways scrolling over a long shelf
   // (trackpad, or Shift+wheel) scrolls the files instead.
@@ -963,12 +1090,18 @@
     const sideways = Math.abs(e.deltaX) > Math.abs(e.deltaY);
     const tiles = $('tiles');
     if (sideways && page === 1 && e.target.closest('.tiles') && tiles.scrollWidth > tiles.clientWidth) return;
+    // A long session list scrolls itself until its end, then the page rolls.
+    const acts = $('actList');
+    if (!sideways && page === 2 && e.target.closest('.act-list') && acts.scrollHeight > acts.clientHeight) {
+      const atEnd = e.deltaY < 0 ? acts.scrollTop <= 0 : acts.scrollTop + acts.clientHeight >= acts.scrollHeight - 1;
+      if (!atEnd) return;
+    }
     e.preventDefault();
     const d = sideways ? e.deltaX : e.deltaY;
     const dir = Math.sign(d);
     if (!dir) return;
     if (dir === wheelDir && performance.now() < wheelCool) return; // momentum of the last swipe
-    const next = Math.max(0, Math.min(1, page + dir));
+    const next = Math.max(0, Math.min(LAST_PAGE, page + dir));
     if (next === page) { wheelAcc = 0; return; }   // no page that way
     if (Math.sign(wheelAcc) !== dir) wheelAcc = 0;  // direction changed: a new gesture
     wheelAcc += d;
@@ -1160,5 +1293,6 @@
   });
 </script>
 <script src="eq.js"></script>
+<script src="activity-view.js"></script>
 </body>
 </html>

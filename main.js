@@ -3,11 +3,12 @@
 // Flags:   --open   start with the island pinned open (for testing)
 //          --solid  start with glass off
 // Env:     ISLAND_DEBUG=1 log open/close; ISLAND_SHOT=file.png save a capture of the page once open
-// Hotkeys: Ctrl+Alt+I pin/unpin the island, Ctrl+Alt+Q quit.
+// Hotkeys: Ctrl+Alt+I pin/unpin the island, Ctrl+Alt+Q quit,
+//          Ctrl+Alt+J go to the Claude Code session that needs you.
 
 const {
   app, BrowserWindow, screen, globalShortcut, ipcMain, Tray, Menu,
-  desktopCapturer, nativeTheme, systemPreferences, nativeImage, shell,
+  desktopCapturer, nativeTheme, systemPreferences, nativeImage, shell, powerMonitor,
 } = require('electron');
 const { execFile } = require('child_process');
 const fs = require('fs');
@@ -17,6 +18,9 @@ const { Settings } = require('./settings');
 const { Shelf } = require('./shelf');
 const { trayImage } = require('./icon');
 const { isPromoted, setPromoted } = require('./tray-visibility');
+const { Hub } = require('./activity/hub');
+const { Ctl } = require('./activity/helper');
+const claudeHooks = require('./activity/claude-hooks');
 
 // Expanded island shape, in DIP. Must match --w / --h / --shelf-h in island.html.
 const SHAPE_W = 380;
@@ -30,6 +34,10 @@ const PAD_B = 48;
 const WIN_W = SHAPE_W + PAD_X * 2;
 const WIN_H = SHAPE_H + SHELF_H + PAD_B;
 let shapeH = SHAPE_H;       // current island height, reported by the renderer
+
+// Live-activity peek pill. Must match --pw / --ph in island.html.
+const PEEK_W = 300;
+const PEEK_H = 40;
 
 const HOT_W = 240;          // hot zone width, centered on the top edge
 const HOT_H = 3;            // px from the top edge that triggers
@@ -70,6 +78,15 @@ const shelf = new Shelf(app.getPath('userData'));
 
 const DEBUG = process.env.ISLAND_DEBUG === '1';
 const log = (...a) => { if (DEBUG) console.log('[island]', ...a); };
+
+// Live activities: Claude Code sessions reported by islandctl.exe hooks.
+// Packaged: islandctl.exe ships in resources. Development: compiled on first run.
+const ctl = new Ctl({ exe: app.isPackaged ? path.join(process.resourcesPath, 'islandctl.exe') : null });
+let ctlExe = null;          // resolved path, for the Claude Code hooks
+let claudeError = '';       // last connect/disconnect failure, shown in settings
+const hub = new Hub({ ctl, log, sound: () => settings.values.claudeSound });
+let peek = null;            // the peek showing, from hub
+let peekDisplay = null;
 
 if (!app.requestSingleInstanceLock() || process.argv.includes('--quit')) {
   // Either another copy is running (it gets our argv), or we were only
@@ -225,7 +242,8 @@ function send(channel, value) {
   if (ready && win && !win.isDestroyed()) win.webContents.send(channel, value);
 }
 
-function openIsland(d) {
+// page: 0 music, 2 activity (opened while a peek shows)
+function openIsland(d, page = 0) {
   if (isOpen || !ready) return;
   isOpen = true;
   leaveSince = 0;
@@ -238,7 +256,9 @@ function openIsland(d) {
   win.setAlwaysOnTop(true, 'screen-saver'); // re-assert: other topmost windows may sit above us
   sendCapture(d);
   if (!win.isVisible()) win.showInactive(); // first open only
+  send('open-page', page);
   send('island-state', 'open');
+  hub.setIslandOpen(true); // a showing peek gives way; news comes as banners while open
   refreshTheme();
   shelf.prune(); // files moved elsewhere since last time drop off
   if (process.env.ISLAND_SHOT) {
@@ -261,6 +281,47 @@ function closeIsland() {
   // Hiding it, or moving it off-screen, after a click made Electron stop
   // delivering clicks to it on later opens: the controls went dead.
   setMouse(false);
+  hub.setIslandOpen(false); // a needs-you still waiting peeks again
+}
+
+// ---- live-activity peeks ------------------------------------------------------
+
+function peekRect(d) {
+  const b = d.bounds;
+  return { x: b.x + (b.width - PEEK_W) / 2, y: b.y, width: PEEK_W, height: PEEK_H };
+}
+
+function overPeek(p) {
+  if (!peek || !peekDisplay || isOpen) return false;
+  const r = peekRect(peekDisplay);
+  return p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height;
+}
+
+// Peeks show on the primary display. Like an open, the window only moves
+// when the display changed.
+function showPeek(p) {
+  peek = p;
+  if (p && ready && !isOpen) {
+    const d = screen.getPrimaryDisplay();
+    peekDisplay = d;
+    current = d;
+    const b = windowBounds(d);
+    const now = win.getBounds();
+    if (b.x !== now.x || b.y !== now.y) win.setBounds(b);
+    win.setAlwaysOnTop(true, 'screen-saver');
+    sendCapture(d);
+    if (!win.isVisible()) win.showInactive();
+  }
+  if (!p) hub.setHover(false);
+  send('peek', p);
+}
+
+function activityPayload() {
+  return { connected: ctlExe ? claudeHooks.status(ctlExe) : 'off', sessions: hub.list() };
+}
+
+function sendActivity() {
+  send('activity', activityPayload());
 }
 
 function inHotZone(p, d) {
@@ -298,7 +359,11 @@ let held = false;
 
 function tick() {
   const p = screen.getCursorScreenPoint();
-  setMouse(isOpen && (held || overShape(p, current)));
+  // A peek pill takes the mouse while the cursor is on it (click, x), and
+  // its timer waits meanwhile.
+  const onPeek = overPeek(p);
+  setMouse((isOpen && (held || overShape(p, current))) || onPeek);
+  hub.setHover(onPeek);
   if (!isOpen) {
     const d = displayAt(p);
     if (!inHotZone(p, d)) {
@@ -308,7 +373,7 @@ function tick() {
     } else if (Date.now() - hotSince >= settings.values.openDelay) {
       hotSince = 0;
       log('open: cursor', p, 'display', d.bounds, 'scale', d.scaleFactor);
-      openIsland(d);
+      openIsland(d, hub.peeking ? 2 : 0);
     }
     return;
   }
@@ -352,6 +417,11 @@ function settingsPayload() {
     accent,
     shelfCount: shelf.items.length,
     version: app.getVersion(),
+    claude: {
+      status: ctlExe ? claudeHooks.status(ctlExe) : 'off',
+      available: !!ctlExe,
+      error: claudeError,
+    },
   };
 }
 
@@ -527,7 +597,7 @@ ipcMain.on('media-cmd', (_e, cmd) => {
 });
 
 ipcMain.handle('snapshot', async () => ({
-  config: config(), media: media.state, art: media.art, shelf: await shelfPayload(),
+  config: config(), media: media.state, art: media.art, shelf: await shelfPayload(), activity: activityPayload(),
 }));
 
 // ---- file shelf --------------------------------------------------------------
@@ -624,8 +694,37 @@ ipcMain.on('settings-action', (_e, action) => {
     setPromoted(TRAY_GUID, action.endsWith('-on')).then(refreshTrayShown);
   } else if (action === 'shelf-clear') {
     shelf.clear();
+  } else if ((action === 'claude-on' || action === 'claude-off') && ctlExe) {
+    try {
+      if (action === 'claude-on') claudeHooks.connect(ctlExe);
+      else claudeHooks.disconnect();
+      claudeError = '';
+      log('claude hooks', action, claudeHooks.status(ctlExe));
+    } catch (e) {
+      // e.g. settings.json that is not valid JSON: left untouched
+      claudeError = e.message;
+      log('claude hooks failed:', e.message);
+    }
+    sendSettings();
+    sendActivity();
   }
 });
+
+// ---- live activities --------------------------------------------------------------
+
+hub.on('peek', showPeek);
+hub.on('banner', (b) => send('banner', b));
+hub.on('sessions', sendActivity);
+
+ipcMain.on('peek-click', (_e, id) => hub.jump(String(id)));
+ipcMain.on('peek-dismiss', (_e, id) => hub.dismiss(String(id), false));
+ipcMain.on('activity-jump', (_e, id) => hub.jump(String(id)));
+ipcMain.on('activity-dismiss', (_e, id) => hub.dismiss(String(id), true));
+
+// Locked or asleep: peeks wait (the lock screen is another desktop anyway).
+let screenLocked = false;
+let suspended = false;
+const updateLocked = () => hub.setLocked(screenLocked || suspended);
 
 // The page reports its natural height (not the window's), so this settles
 // instead of feeding back. Placed while hidden too, so it opens already sized.
@@ -660,9 +759,17 @@ app.whenReady().then(async () => {
   createSettingsWindow();
   if (process.argv.includes('--settings')) settingsWin.webContents.once('did-finish-load', () => setTimeout(showSettings, 300));
   media.start();
+  ctl.path().then((exe) => { ctlExe = exe; sendSettings(); sendActivity(); })
+    .catch((e) => log('islandctl unavailable:', e.message));
+  hub.start();
+  powerMonitor.on('lock-screen', () => { screenLocked = true; updateLocked(); });
+  powerMonitor.on('unlock-screen', () => { screenLocked = false; updateLocked(); });
+  powerMonitor.on('suspend', () => { suspended = true; updateLocked(); });
+  powerMonitor.on('resume', () => { suspended = false; updateLocked(); });
   setInterval(tick, TICK_MS);
   registerShortcut('Control+Alt+I', togglePinned);
   registerShortcut('Control+Alt+Q', () => app.quit());
+  registerShortcut('Control+Alt+J', () => hub.jumpLatest()); // the Claude session that needs you
   nativeTheme.on('updated', refreshTheme);
   const displaysChanged = () => {
     sourceIds.clear();
@@ -677,5 +784,6 @@ app.on('window-all-closed', () => app.quit());
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   media.stop();
+  hub.stop();
   settings.save();
 });

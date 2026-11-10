@@ -30,6 +30,10 @@
       "settings-preload.js",
       "island.html",
       "eq.js",
+      "activity-view.js",
+      "activity/hub.js",
+      "activity/helper.js",
+      "activity/claude-hooks.js",
       "settings.html",
       "settings.js",
       "shelf.js",
@@ -39,7 +43,8 @@
       "package.json"
     ],
     "extraResources": [
-      { "from": "media/bin/smtc.exe", "to": "smtc.exe" }
+      { "from": "media/bin/smtc.exe", "to": "smtc.exe" },
+      { "from": "activity/bin/islandctl.exe", "to": "islandctl.exe" }
     ],
     "npmRebuild": false,
     "win": {

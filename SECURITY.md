@@ -12,7 +12,7 @@ Include the version, Windows build, steps to reproduce and the impact you observ
 
 ## What island accesses
 
-island runs entirely on your machine and **makes no network requests**. For review purposes, this is everything it touches:
+island runs entirely on your machine and **makes no network requests** (the live-activity pipe is local only). For review purposes, this is everything it touches:
 
 | Area | Access | Why |
 |---|---|---|
@@ -23,10 +23,14 @@ island runs entirely on your machine and **makes no network requests**. For revi
 | App data | `%APPDATA%\island\settings.json`, `shelf.json` | Preferences and the shelf list. |
 | Registry | Reads `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`; reads/writes `IsPromoted` for its own entry under `HKCU\Control Panel\NotifyIconSettings`; writes its own `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` value when *Start with Windows* is on | Theme sync, keeping the tray icon visible, auto-start. Current user only; no admin rights. |
 | Child process | Spawns `smtc.exe` (ships with the installer; compiled locally from `media/smtc.cs` in development) | WinRT media APIs. It exits when the app exits. |
+| Local pipe | Listens on the named pipe `\\.\pipe\island-<username>` (default pipe security: only your account, administrators and SYSTEM can write to it) for one-line JSON events from `islandctl.exe` | Live activities. Messages are data to display only: validated against a fixed event list, string lengths capped, rate-limited; nothing in a message is ever run or opened. |
+| Claude Code settings | Only when you turn on *Connect Claude Code*: reads `~/.claude/settings.json`, backs it up to `~/.claude/settings.island-backup.json`, adds hooks that run `islandctl.exe hook`; turning it off removes exactly those hooks. Refuses to touch the file if it is not valid JSON. | Claude Code reports session events (working, finished, needs you) to the island. `islandctl.exe` forwards only the event name, session id, working directory, notification type and text, tool name, and the Claude process and terminal window ids; never prompts, tool input or output. The island shows only the folder name, status and tool name. |
+| Windows state | `islandctl.exe` reads the foreground window, the shell's notification state (`SHQueryUserNotificationState`) and the Do Not Disturb profile (WNF quiet-hours state); it can bring a terminal window to the front when you click a peek or press Ctrl+Alt+J | Holding peeks during fullscreen apps and Do Not Disturb, not peeking at a terminal you are already looking at, jumping to a session's terminal. |
 
 ## Hardening
 
 - Renderers run with `contextIsolation`, `sandbox` and without `nodeIntegration`; preloads expose a minimal `contextBridge` API. Only local files are loaded; no remote content, no `webview`.
+- Live-activity messages from the pipe are parsed as data and validated (known event names, session ids `^[\w.-]{1,100}$`, capped strings, integer pids and window handles); peek clicks can only focus a window handle that came from a hook, through `islandctl.exe focus`.
 - Media commands from the renderer are validated against `^(toggle|next|prev|seek \d+)$` before reaching the helper. Shelf IPC only accepts absolute paths and known item ids; dropped blobs are size-limited (200 MB) and their names sanitized.
 - The island window is excluded from screen capture (`WDA_EXCLUDEFROMCAPTURE`) in glass mode; this is also why it does not appear in screenshots.
 

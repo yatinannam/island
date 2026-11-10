@@ -1,13 +1,13 @@
 # island
 
-A macOS-style "notch" island for Windows 10/11, built on Electron. Rest the cursor on the top-center edge of a display and a glass island springs out of the bezel with system-wide now-playing controls and a drag-and-drop file shelf.
+A macOS-style "notch" island for Windows 10/11, built on Electron. Rest the cursor on the top-center edge of a display and a glass island springs out of the bezel with system-wide now-playing controls, a drag-and-drop file shelf and live Claude Code activity.
 
 **[Download the latest installer](https://github.com/yatinannam/island/releases/latest)** (`island-setup-<version>.exe`, x64, per-user install, no admin rights). The SHA-256 of each installer is listed in its release notes.
 
 | | |
 |---|---|
 | Platform | Windows 10 1809+ / Windows 11, x64 (developed and tested on Windows 11 build 26300 at 125% scaling) |
-| Runtime | Electron 45 (Chromium + Node), one 33 MB native helper for media |
+| Runtime | Electron 45 (Chromium + Node), two small C# helpers (`smtc.exe` for media, `islandctl.exe` for live activities) |
 | Footprint | ~1.5% of one CPU core idle; ~0.3 core while open with glass (~0.4 while music plays); ~350 MB RAM across Electron processes |
 | Network | None. The app makes no network requests. |
 | License | [MIT](LICENSE) |
@@ -24,6 +24,7 @@ A macOS-style "notch" island for Windows 10/11, built on Electron. Rest the curs
 - [Media bridge (`smtc.exe`)](#media-bridge-smtcexe)
 - [Equalizer (`eq.js`)](#equalizer-eqjs)
 - [File shelf](#file-shelf)
+- [Live activities (Claude Code)](#live-activities-claude-code)
 - [Settings](#settings)
 - [Tray icon](#tray-icon)
 - [IPC reference](#ipc-reference)
@@ -42,6 +43,7 @@ A macOS-style "notch" island for Windows 10/11, built on Electron. Rest the curs
 - **Live equalizer**: the four bars next to the title move with the sound actually playing (bass to treble).
 - **Glass material** matching Windows acrylic (blur, luminosity, tint, noise), tinted by the current artwork ("song color"), following the system theme and the *Transparency effects* switch. A solid mode is available.
 - **File shelf** on a second page: drop files, folders or in-memory blobs (e.g. images from a browser) on the island, drag them back out into any app; multi-select by long press or Ctrl+click.
+- **Live activities for Claude Code** on a third page, and as "peeks": when a Claude Code session finishes a long turn or needs you (a permission prompt, waiting for input), the closed island drops a small pill on its own, with a soft chime. Click it, or press Ctrl+Alt+J, to jump to that terminal. Windows has no Live Activities API for apps; island builds one from Claude Code hooks.
 - **Tray flyout** for settings, rendered with the native acrylic backdrop and the Windows accent color.
 
 ## Install
@@ -51,7 +53,7 @@ Run `island-setup-<version>.exe`. The NSIS one-click installer installs per-user
 The installer and `island.exe` are **not code-signed**. SmartScreen may show *Windows protected your PC* on first run: choose *More info > Run anyway*. Verify the download against the SHA-256 in the release notes first:
 
 ```powershell
-Get-FileHash .\island-setup-0.1.4.exe -Algorithm SHA256
+Get-FileHash .\island-setup-0.2.0.exe -Algorithm SHA256
 ```
 
 User data lives in `%APPDATA%\island` (`settings.json`, `shelf.json`, `shelf-files\`). Uninstalling leaves it in place; delete the folder to remove it.
@@ -179,6 +181,29 @@ The shelf is the island's second page; the island never changes size. Scroll on 
 - **Drag out.** The renderer cancels Chromium's `dragstart` and asks the main process, which calls `webContents.startDrag({ files, icon })`: a real `CF_HDROP` (`FileDrop`) data object, so the drop target decides copy or move like an Explorer drag.
 - **Multi-select.** A 400 ms stationary long press (or Ctrl+click) enters select mode; clicks toggle; dragging a selected tile drags every selected file; *Done*, a drag-out or closing the island exits. Moving before 400 ms is an ordinary single-file drag.
 
+## Live activities (Claude Code)
+
+*Connect Claude Code* in the flyout adds island's hooks to `~/.claude/settings.json` (backed up to `settings.island-backup.json` first; other hooks, plugins and settings are kept) and removes exactly those when turned off. Each hook runs `islandctl.exe hook` in exec form (no shell) with `async: true`, so Claude Code never waits for it.
+
+```mermaid
+flowchart LR
+  cc["Claude Code<br/>(any session)"] -- "hook JSON on stdin" --> ctl["islandctl.exe hook"]
+  ctl -- "one JSON line over the<br/>named pipe island-&lt;user&gt;" --> hub["activity/hub.js<br/>(main process)"]
+  hub -- "peek / banner / activity" --> view["activity-view.js<br/>(island renderer)"]
+  view -- "click: jump" --> hub
+  hub -- "islandctl focus / state" --> ctl2["islandctl.exe"]
+```
+
+1. **`islandctl.exe`** (`activity/islandctl.cs`, C# 5, GUI subsystem so it never flashes a console). `hook` reads the hook JSON, keeps only a few top-level string fields (a small scanner skips `tool_input` / `tool_response`), finds the Claude process (first non-shell ancestor) and its terminal window (`AttachConsole` + `GetConsoleWindow`; in Windows Terminal that is a hidden pseudo-console window owned by the terminal's window, so `GetAncestor(GA_ROOTOWNER)`), and writes one line to the pipe. It never prints, always exits 0, and gives up at once when no island is listening. About 85 ms per run, in the background.
+2. **Hooks used.** `UserPromptSubmit` (working), `Stop` / `StopFailure` (finished / ended on an error), `Notification` (`permission_prompt`, `idle_prompt`, `elicitation_dialog`: needs you), `PermissionRequest` (which tool the prompt is for), `PostToolUse` / `PostToolUseFailure` / `PermissionDenied` (Claude moved on: clears needs-you), `SubagentStop` (counted), `SessionEnd`.
+3. **Hub.** One session per `session_id`, labelled by the project folder (`island`, `island 2` for a second session in the same folder). A session ends as *closed* when its Claude process exits. Peeks follow these rules:
+   - *Finished* peeks for 5 s, only if the turn took 20 s or more and its terminal is not the foreground window. *Needs you* always peeks and stays until that session moves on, the pill is clicked, or dismissed with its x.
+   - One at a time, needs-you first; a needs-you pill gives way to waiting peeks after 5 s and comes back.
+   - Held while `SHQueryUserNotificationState` reports a fullscreen app, presentation or quiet time, while Do Not Disturb is on (the shell's quiet-hours WNF state; the notification state does not show it), and while the PC is locked or asleep. Held peeks show afterwards without a chime; after 30 min they are only listed.
+   - While the island is open, news comes as a one-line banner instead.
+   - Chimes are made with Web Audio (rising: finished; double tap: needs you; falling: error), once per peek; *Sounds* in the flyout turns them off.
+4. **Pill and page.** The pill (300×40 DIP) is the same canvas silhouette as the island, sprung to a smaller size; the main tick gives it the mouse while the cursor is on it, and its timer waits meanwhile. The top hot zone still opens the island, on the Activity page when a peek is showing. Clicking the pill or a row, or Ctrl+Alt+J (latest needs-you, else latest finished), runs `islandctl focus <hwnd>` (`AttachThreadInput` + `SetForegroundWindow`). It brings the terminal window forward, not a specific tab.
+
 ## Settings
 
 `%APPDATA%\island\settings.json`, validated and clamped on load, written 400 ms after the last change:
@@ -190,6 +215,7 @@ The shelf is the island's second page; the island never changes size. Scroll on 
 | `songColor` | `55` | 0–100 | Strength of the artwork tint (0 = off) |
 | `openDelay` | `150` | 0–600 ms | Dwell in the hot zone before opening |
 | `closeDelay` | `120` | 0–1000 ms | Time outside the island before closing |
+| `claudeSound` | `true` | bool | Chimes for Claude Code peeks |
 | `trayPromotedGuids` | `[]` | string[] | Internal: tray GUIDs already moved to the taskbar once |
 
 *Start with Windows* is not stored here: it is `app.setLoginItemSettings` for the running executable (`HKCU\...\Run`). Changing a look setting holds the island open on the primary display until the flyout closes, as a live preview.
@@ -206,8 +232,11 @@ Island window (`preload.js` → `window.island`):
 
 | Direction | Channel | Payload |
 |---|---|---|
-| renderer → main (invoke) | `snapshot` | → `{ config, media, art, shelf }` |
+| renderer → main (invoke) | `snapshot` | → `{ config, media, art, shelf, activity }` |
 | main → renderer | `island-state` | `'open'` \| `'closed'` |
+| main → renderer | `open-page` | page for the next open (0 music, 2 activity) |
+| main → renderer | `peek` / `banner` | `{ key, session, kind, label, tool, durationMs, chime }` or `null` |
+| main → renderer | `activity` | `{ connected, sessions: [{ id, label, state, needsKind, tool, turnStart, durationMs, endedAt, lastEventAt, subagents, canJump }] }` |
 | main → renderer | `config` | `{ glass, dark, transparency, songColor }` |
 | main → renderer | `capture` | `{ sourceId, display, window }` (bounds in DIP) |
 | main → renderer | `media-state` / `media-art` | helper `state` / `{ key, url }` |
@@ -217,9 +246,10 @@ Island window (`preload.js` → `window.island`):
 | renderer → main | `shape-size` | island height for hit-testing |
 | renderer → main | `shelf-add` / `shelf-add-data` | `string[]` / `{ name, bytes }` |
 | renderer → main | `shelf-remove` / `shelf-open` / `shelf-clear` / `shelf-drag` | id / id / — / `string[]` |
+| renderer → main | `peek-click` / `peek-dismiss` / `activity-jump` / `activity-dismiss` | session id |
 | renderer → main | `debug` | string, logged when `ISLAND_DEBUG=1` |
 
-Settings flyout (`settings-preload.js` → `window.settings`): `settings-get` (invoke), `settings-set` (partial settings), `settings-action` (`quit`, `hide`, `pin`, `start-with-windows-on|off`, `tray-shown-on|off`, `shelf-clear`), `settings-size` (the page's natural height); main pushes `settings`, `settings-shown` and `settings-hiding` (fade the content out before the window hides).
+Settings flyout (`settings-preload.js` → `window.settings`): `settings-get` (invoke), `settings-set` (partial settings), `settings-action` (`quit`, `hide`, `pin`, `start-with-windows-on|off`, `tray-shown-on|off`, `shelf-clear`, `claude-on|off`), `settings-size` (the page's natural height); main pushes `settings`, `settings-shown` and `settings-hiding` (fade the content out before the window hides).
 
 ## Flags, environment variables, hotkeys
 
@@ -234,6 +264,7 @@ Settings flyout (`settings-preload.js` → `window.settings`): `settings-get` (i
 | `ISLAND_SHOT=<file.png>` | Save `webContents.capturePage()` of the island 1.8 s after opening (the island is hidden from normal screenshots in glass mode) |
 | `ISLAND_CSS=<css>` | Inject CSS into the island page (layout debugging) |
 | Ctrl+Alt+I / Ctrl+Alt+Q | Pin or close the island / quit |
+| Ctrl+Alt+J | Go to the terminal of the Claude Code session that needs you (else the latest one that finished) |
 
 A second launch without flags opens the settings flyout in the running copy (single-instance lock).
 
@@ -251,17 +282,22 @@ bun run dist         # build the installer
 
 `bun run dist` runs:
 
-1. `scripts/build-helper.js` — compiles `media/smtc.cs` → `media/bin/smtc.exe` with the in-box `csc.exe`.
+1. `scripts/build-helper.js` — compiles `media/smtc.cs` → `media/bin/smtc.exe` and `activity/islandctl.cs` → `activity/bin/islandctl.exe` with the in-box `csc.exe`.
 2. `scripts/make-icon.js` — renders `build/icon.ico` (16–256 px, PNG-compressed entries) and `build/icon.png` from `icon.js`, with a dependency-free PNG/ICO encoder.
-3. `electron-builder --win nsis` (26.x) — `npmRebuild: false` (no native modules), `smtc.exe` added via `extraResources`, NSIS one-click per-user installer → `dist/island-setup-<version>.exe`.
+3. `electron-builder --win nsis` (26.x) — `npmRebuild: false` (no native modules), `smtc.exe` and `islandctl.exe` added via `extraResources`, NSIS one-click per-user installer → `dist/island-setup-<version>.exe`.
 
 ## Repository layout
 
 ```
 main.js                 main process: cursor poller, windows, tray, IPC
 preload.js              window.island bridge
-island.html             island renderer: canvas glass, music + shelf pages
+island.html             island renderer: canvas glass, music + shelf + activity pages
 eq.js                   equalizer bars from system audio loopback
+activity-view.js        live-activity peek pill, Activity page, banner, chimes
+activity/hub.js         live-activity sessions and peek rules (main process, named pipe)
+activity/claude-hooks.js  connect/disconnect island's hooks in ~/.claude/settings.json
+activity/helper.js      compiles and runs islandctl.exe
+activity/islandctl.cs   hook bridge, foreground/DND state, window focus (C# 5)
 settings.html           tray flyout UI
 settings-preload.js     window.settings bridge
 settings.js             settings store (validation, debounced save)
@@ -280,6 +316,7 @@ scripts/                build-helper.js, make-icon.js
 - **Multi-monitor:** opening on another display moves the window, which may hit the same input bug as hiding; only single-display setups are tested.
 - **Unsigned binaries:** SmartScreen warns on first run; the tray GUID is per executable path.
 - **Media:** apps that don't publish to SMTC (or publish no timeline) show no progress/seek; some apps publish the title before the artwork, so art can lag by one event.
+- **Live activities:** jumping brings the terminal window forward, not the exact Windows Terminal tab, and cannot bring forward an Administrator terminal. Claude Code sends no event when a turn is interrupted with Esc, so such a session shows *idle* after 2 min without news. Turn *Connect Claude Code* off before uninstalling; otherwise its hooks keep pointing at the removed `islandctl.exe` (Claude Code reports a non-blocking hook error).
 
 ## Contributing, security, license
 
