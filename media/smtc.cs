@@ -250,7 +250,9 @@ static class Smtc {
       case "seek":
         long ms;
         if (parts.Length > 1 && long.TryParse(parts[1], out ms) && ms >= 0) {
-          Await(s.TryChangePlaybackPositionAsync(ms * 10000));
+          // The island counts from the start of the timeline (position - StartTime), like Emit.
+          var start = s.GetTimelineProperties().StartTime;
+          Await(s.TryChangePlaybackPositionAsync((start + TimeSpan.FromMilliseconds(ms)).Ticks));
         }
         break;
       default: Error("unknown command " + parts[0]); break;
