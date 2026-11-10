@@ -39,7 +39,6 @@
     switch (p.kind) {
       case 'finished': return { icon: ICONS.ok, status: 'finished', detail: dur(p.durationMs) };
       case 'failed': return { icon: ICONS.err, status: 'ended on an error', detail: dur(p.durationMs) };
-      case 'waiting': return { icon: ICONS.warn, status: 'waiting for you', detail: '' };
       case 'question': return { icon: ICONS.warn, status: 'has a question', detail: '' };
       default: return { icon: ICONS.warn, status: p.tool ? `needs you · ${p.tool}` : 'needs you', detail: '' };
     }
@@ -139,7 +138,7 @@
       case 'needs':
         return {
           icon: ICONS.warn,
-          what: s.needsKind === 'waiting' ? 'waiting for you' : s.needsKind === 'question' ? 'has a question'
+          what: s.needsKind === 'question' ? 'has a question'
             : s.tool ? `needs you · ${s.tool}` : 'needs you',
           when: '',
         };
@@ -160,7 +159,7 @@
     row.title = s.canJump ? 'Go to its terminal' : '';
     row.innerHTML = '<span class="i"></span><span class="name"></span><span class="what"></span><span class="when"></span>'
       + (s.canJump ? `<button class="go" title="Go to its terminal">${GO}</button>` : '')
-      + (s.state !== 'working' ? `<button class="x" title="${s.state === 'needs' ? 'Dismiss' : 'Remove'}">${X}</button>` : '');
+      + `<button class="x" title="Remove from the list">${X}</button>`;
     row.addEventListener('click', (e) => {
       if (e.target.closest('.x')) window.island.activityDismiss(s.id);
       else if (s.canJump) window.island.activityJump(s.id);
@@ -195,7 +194,7 @@
     if (order.some((row, i) => list.children[i] !== row)) list.replaceChildren(...order);
     const working = sessions.filter((s) => s.state === 'working' && Date.now() - s.lastEventAt <= IDLE_MS).length;
     const needs = sessions.filter((s) => s.state === 'needs').length;
-    $('actSummary').textContent = [needs && `${needs} waiting on you`, working && `${working} working`].filter(Boolean).join(' · ');
+    $('actSummary').textContent = [needs && `${needs} need${needs === 1 ? 's' : ''} you`, working && `${working} working`].filter(Boolean).join(' · ');
     $('act').classList.toggle('act-none', !sessions.length);
     $('actEmpty').innerHTML = activity.connected === 'off' || activity.connected === 'partial'
       ? 'Not connected<small>Turn on Connect Claude Code in island settings</small>'

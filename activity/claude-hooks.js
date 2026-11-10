@@ -15,7 +15,7 @@ const BACKUP = path.join(os.homedir(), '.claude', 'settings.island-backup.json')
 const EVENTS = [
   'UserPromptSubmit',     // working
   'Stop', 'StopFailure',  // finished / ended on an error
-  'Notification',         // needs you: permission prompt, waiting for input, question
+  'Notification',         // needs you: permission prompt, question
   'PermissionRequest',    // which tool a permission prompt is for
   'PostToolUse', 'PostToolUseFailure', 'PermissionDenied', // Claude moved on: clears needs-you
   'SubagentStop',         // counted on the session

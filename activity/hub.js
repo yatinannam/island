@@ -6,7 +6,7 @@
 // Rules (decided with Yatin):
 // - Working: no peek, only listed. Finished: peek for 5s, only if the turn
 //   ran 10s or more and its terminal is not the foreground window.
-// - Needs you (permission prompt, waiting for input, a question): peek always,
+// - Needs you (a permission prompt, a question): peek always,
 //   stays until that session moves on, the peek is clicked or dismissed.
 // - Subagent finished: counted on the session, no peek.
 // - Held while a fullscreen app, a presentation, quiet time or Do Not Disturb
@@ -39,10 +39,11 @@ const EVENTS = new Set([
   'UserPromptSubmit', 'PermissionRequest', 'PostToolUse', 'PostToolUseFailure', 'PermissionDenied',
   'Notification', 'Stop', 'StopFailure', 'SubagentStop', 'SessionEnd',
 ]);
-// Notification types that mean "Claude is waiting on you".
+// Notification types that mean "Claude is blocked on you". Not idle_prompt
+// (Claude finished a while ago and you haven't typed): that session is just
+// finished, and Yatin found an amber "waiting for you" on it confusing.
 const NEEDS = {
   permission_prompt: 'permission',
-  idle_prompt: 'waiting',
   elicitation_dialog: 'question',
   elicitation_url_dialog: 'question',
   agent_needs_input: 'question',
@@ -447,12 +448,11 @@ class Hub extends EventEmitter {
     return s ? this.jump(s.id) : Promise.resolve(false);
   }
 
-  // The pill's x: hide this peek. Activity page x: also forget a session that
-  // is done with.
+  // The pill's x: hide this peek. Activity page x: also remove the session
+  // from the list, whatever its state; it comes back with its next event.
   dismiss(sessionId, forget) {
     this.drop(sessionId);
-    const s = this.sessions.get(sessionId);
-    if (forget && s && s.state !== 'working' && s.state !== 'needs') this.sessions.delete(sessionId);
+    if (forget) this.sessions.delete(sessionId);
     this.emitSessions();
   }
 
