@@ -1,7 +1,7 @@
 {
   "name": "island",
   "productName": "island",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A Mac-style island for Windows: music and a file shelf at the top of your screen",
   "author": "yatinannam",
   "license": "MIT",
@@ -37,6 +37,7 @@
       "activity/claude-hooks.js",
       "settings.html",
       "settings.js",
+      "updater.js",
       "shelf.js",
       "icon.js",
       "tray-visibility.js",
