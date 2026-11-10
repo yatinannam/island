@@ -10,6 +10,7 @@ island is an Electron app with one always-on-top, transparent, click-through win
 - [Pages and swiping](#pages-and-swiping)
 - [File shelf](#file-shelf)
 - [Claude Code sessions](#claude-code-sessions)
+- [Updates](#updates)
 - [Settings file](#settings-file)
 - [Tray icon](#tray-icon)
 - [IPC reference](#ipc-reference)
@@ -49,7 +50,7 @@ flowchart LR
 
 | Process or window | Role |
 |---|---|
-| **Main** (`main.js`) | Polls the cursor, opens and closes the island, switches click-through, and owns the tray, settings, shelf store, media helper and activity hub. |
+| **Main** (`main.js`) | Polls the cursor, opens and closes the island, switches click-through, and owns the tray, settings, shelf store, media helper, activity hub and updater. |
 | **Island window** (`island.html`, `preload.js`) | Frameless, transparent, always on top, `focusable: false`, `backgroundThrottling: true`, `setContentProtection(true)` in glass mode. Draws the notch on a canvas and hosts the pages. |
 | **Settings flyout** (`settings.html`, `settings-preload.js`) | A 360 px frameless window with `backgroundMaterial: 'acrylic'`, placed like Windows' own tray flyouts. Hides when it loses focus. |
 | **`smtc.exe`** (`media/smtc.cs`) | Child process that bridges the WinRT media APIs. Exits when its stdin closes. |
@@ -170,6 +171,17 @@ flowchart LR
    - Sounds are made with Web Audio: rising for finished, a double tap for needs-you, falling for an error. Each peek sounds at most once.
 4. **Peek and page.** A peek (300×40 DIP) is the same canvas silhouette, sprung to a smaller size. The main tick gives it the mouse while the cursor is on it, and its timer pauses meanwhile. The hot zone still opens the island, on the Claude Code page while a peek shows. Clicking a peek or a row, or <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>J</kbd> (the latest session that needs you, else the latest that finished), runs `islandctl focus <hwnd>` (`AttachThreadInput` and `SetForegroundWindow`). This brings the terminal window forward, not a specific tab.
 
+## Updates
+
+`updater.js` updates the installed app from GitHub Releases, with no dependencies. Development copies never update themselves.
+
+1. **Check.** A minute after start and then every 6 hours (with *Update automatically* on), or on *Check now* in Settings, it requests `api.github.com/repos/yatinannam/island/releases/latest` through Electron's `net.fetch` (system proxy settings apply). Drafts and prereleases are ignored. A release counts when its tag `vX.Y.Z` is newer than the running version and it has an asset named `island-setup-X.Y.Z.exe`.
+2. **Download.** The asset must come from `https://github.com/yatinannam/island/releases/download/`, have a plausible size, and carry the `sha256:` digest that GitHub publishes for release assets. It streams into `%TEMP%\island-update\island-setup-X.Y.Z.exe.part`, hashing as it goes; a size or SHA-256 mismatch deletes it. A verified file from an earlier run is reused.
+3. **Install.** The NSIS installer runs detached with `--updated /S --force-run`: it waits for island to exit, installs silently over the same per-user folder (settings, shelf, login item and tray GUID stay, since the paths do not change) and starts island again. island then quits. This happens on *Restart* (Settings, or the tray menu's *Restart to update*), or on its own once the PC has had no input for 10 minutes while the island, a peek and the flyout are all closed.
+4. **Clean up.** A minute after start, installers of the running version or older and unfinished downloads are deleted. The installer that just ran may still hold its file at startup, so this waits, and a locked file is skipped.
+
+For tests, `ISLAND_UPDATE_URL` can point the check at a local server (`http://127.0.0.1` or `localhost` only); downloads must then come from that server. It also enables updates in a development copy.
+
 ## Settings file
 
 `%APPDATA%\island\settings.json`, validated and clamped on load, written 400 ms after the last change.
@@ -182,6 +194,7 @@ flowchart LR
 | `openDelay` | `150` | 0–600 ms | Time in the hot zone before opening |
 | `closeDelay` | `120` | 0–1000 ms | Time outside the island before closing |
 | `claudeSound` | `true` | bool | Sounds for Claude Code peeks |
+| `autoUpdate` | `true` | bool | Check for, download and install updates automatically |
 | `trayPromotedGuids` | `[]` | string[] | Internal: tray icons already moved to the taskbar once |
 
 *Start with Windows* is not stored here; it is the login item of the running executable (`app.setLoginItemSettings`). The Claude Code switch is not stored either; it reflects Claude Code's own settings. Changing a look setting keeps the island open on the primary display as a live preview until the flyout closes.
@@ -215,7 +228,7 @@ Island window (`preload.js`, `window.island`):
 | renderer → main | `peek-click` / `peek-dismiss` / `activity-jump` / `activity-dismiss` | session id |
 | renderer → main | `debug` | string, logged with `ISLAND_DEBUG=1` |
 
-Settings flyout (`settings-preload.js`, `window.settings`): `settings-get` (invoke), `settings-set` (partial settings), `settings-action` (`quit`, `hide`, `pin`, `start-with-windows-on`/`-off`, `tray-shown-on`/`-off`, `shelf-clear`, `claude-on`/`-off`) and `settings-size` (the page's natural height). The main process sends `settings`, `settings-shown` and `settings-hiding`; the page fades its content out before the window hides.
+Settings flyout (`settings-preload.js`, `window.settings`): `settings-get` (invoke), `settings-set` (partial settings), `settings-action` (`quit`, `hide`, `pin`, `start-with-windows-on`/`-off`, `tray-shown-on`/`-off`, `shelf-clear`, `claude-on`/`-off`, `update-check`, `update-install`) and `settings-size` (the page's natural height). The main process sends `settings`, `settings-shown` and `settings-hiding`; the page fades its content out before the window hides.
 
 ## Repository layout
 
@@ -234,6 +247,7 @@ settings.html             settings flyout
 settings-preload.js       window.settings bridge
 settings.js               settings store (validation, delayed save)
 shelf.js                  shelf store
+updater.js                updates from GitHub Releases (check, verified download, silent install)
 icon.js                   tray and app icon renderer
 tray-visibility.js        keeps the tray icon on the taskbar
 media/smtc.cs             WinRT media bridge (C# 5)

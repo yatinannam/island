@@ -10,6 +10,7 @@ const DEFAULTS = {
   openDelay: 150,       // ms the cursor rests on the top edge before opening
   closeDelay: 120,      // ms the cursor is away before closing
   claudeSound: true,    // chimes for Claude Code finished / needs-you peeks
+  autoUpdate: true,     // check GitHub for new versions and install them when the PC is idle
   trayPromotedGuids: [],  // internal: tray icons (one per exe path) already moved out of the ^ overflow once
 };
 
@@ -25,6 +26,7 @@ function clean(raw) {
   if (!raw || typeof raw !== 'object') return out;
   if (typeof raw.glass === 'boolean') out.glass = raw.glass;
   if (typeof raw.claudeSound === 'boolean') out.claudeSound = raw.claudeSound;
+  if (typeof raw.autoUpdate === 'boolean') out.autoUpdate = raw.autoUpdate;
   if (Array.isArray(raw.trayPromotedGuids)) {
     out.trayPromotedGuids = raw.trayPromotedGuids.filter((g) => typeof g === 'string').slice(-10);
   }

@@ -49,6 +49,7 @@ There is no automated UI test suite yet; changes are verified on a real Windows 
 | `ISLAND_DEBUG=1` | Log open and close with cursor coordinates, presses on the island, media state, shelf and Claude Code events |
 | `ISLAND_SHOT=<file.png>` | Save a capture of the island page 1.8 s after opening |
 | `ISLAND_CSS=<css>` | Inject CSS into the island page |
+| `ISLAND_UPDATE_URL=<url>` | Check a local fake "latest release" (`http://127.0.0.1:<port>/...` only) instead of GitHub; also enables updates in a development copy |
 | `CLAUDE_CONFIG_DIR=<folder>` | Claude Code's own setting for its config folder; island reads and writes its hooks there |
 | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>I</kbd> / <kbd>Q</kbd> / <kbd>J</kbd> | Pin the island open / quit / go to the Claude Code session that needs you (only while Claude Code is on) |
 
@@ -80,5 +81,7 @@ Before opening a PR, check by hand: hover open/close, play/pause/next/seek (clic
 2. `bun run dist` → `dist/island-setup-<version>.exe`. It runs `scripts/build-helper.js` (compiles `smtc.exe` and `islandctl.exe` with the in-box `csc.exe`), `scripts/make-icon.js` (`build/icon.ico` and `build/icon.png` from `icon.js`, with a small built-in PNG/ICO encoder), and `electron-builder --win nsis` (no native modules; both helpers added through `extraResources`; a one-click, per-user NSIS installer).
 3. `Get-FileHash dist\island-setup-<version>.exe -Algorithm SHA256`.
 4. `gh release create v<version> dist/island-setup-<version>.exe --title "island <version>" --notes "<changes + SHA-256>"`.
+
+Installed copies update themselves from this release within about 6 hours, so the names matter: the tag must be `v<version>` and the asset `island-setup-<version>.exe`, published as a full release (drafts and prereleases are ignored). Before publishing, test the update path against a local fake release (`ISLAND_UPDATE_URL`, see [Updates](docs/ARCHITECTURE.md#updates)): install the previous version, offer it the new installer, and check that *Restart* installs it and island starts again.
 
 By contributing you agree that your contributions are licensed under the [MIT License](LICENSE).

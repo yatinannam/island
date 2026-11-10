@@ -45,14 +45,15 @@ When a task finishes or Claude needs your input, the closed island shows a small
 - A glass background that blurs the desktop behind the island, like Windows acrylic, tinted by the album art. It follows light and dark mode; a solid background is available in Settings.
 - Spring animations for opening, closing and switching pages. When you swipe, the pages follow your fingers and settle on the next page.
 - Never takes focus from the app you are typing in, lets clicks through while closed, and holds peeks while a fullscreen app or Do Not Disturb is on.
-- About 1.5% of one CPU core when idle, and no network requests.
+- Updates itself from GitHub Releases while your PC is idle.
+- About 1.5% of one CPU core when idle.
 
 ## Install
 
 Requires Windows 11, or Windows 10 version 2004 or later (x64).
 
 1. Download `island-setup-<version>.exe` from the [latest release](https://github.com/yatinannam/island/releases/latest).
-2. Run it. It installs for the current user, without administrator rights, into `%LOCALAPPDATA%\Programs\island`, adds a Start menu entry and starts island. Installing over an earlier version updates it and keeps your settings and shelf.
+2. Run it. It installs for the current user, without administrator rights, into `%LOCALAPPDATA%\Programs\island`, adds a Start menu entry and starts island. Installing over an earlier version updates it and keeps your settings and shelf. From version 0.4.0 on, island updates itself; earlier versions need this one manual install.
 3. Move the cursor to the top-center edge of the screen.
 
 > [!NOTE]
@@ -77,7 +78,7 @@ Settings and the shelf are stored in `%APPDATA%\island`. Uninstalling from *Sett
 | Open Settings | Click the tray icon |
 | Quit | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Q</kbd>, or right-click the tray icon |
 
-Settings include the background (glass or solid), transparency, album-art tint, open and close delays, starting with Windows, keeping the tray icon on the taskbar, clearing the shelf, and Claude Code.
+Settings include the background (glass or solid), transparency, album-art tint, open and close delays, starting with Windows, keeping the tray icon on the taskbar, clearing the shelf, Claude Code, and updates.
 
 ## Claude Code
 
@@ -104,7 +105,7 @@ Peeks show only the project folder name, the status and the tool name, never you
 
 ## Privacy
 
-The app makes no network requests. It reads what Windows' media controls publish, captures the screen behind the island only to blur it (in memory, never saved), listens to your speakers' output only to move the equalizer bars, and, with Claude Code switched on, receives session events over a local pipe that only your Windows account can write to. [SECURITY.md](SECURITY.md) lists everything the app accesses and how to report a vulnerability.
+The only network traffic is the update check: every 6 hours the app asks GitHub for the latest release, and downloads the installer when there is a newer one. No identifiers or usage data are sent, and turning off *Update automatically* in Settings stops it. Otherwise the app reads what Windows' media controls publish, captures the screen behind the island only to blur it (in memory, never saved), listens to your speakers' output only to move the equalizer bars, and, with Claude Code switched on, receives session events over a local pipe that only your Windows account can write to. [SECURITY.md](SECURITY.md) lists everything the app accesses and how to report a vulnerability.
 
 ## How it works
 

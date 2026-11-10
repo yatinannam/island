@@ -246,6 +246,25 @@
         <button class="switch" id="claudeSound" role="switch" aria-label="Claude Code sounds"></button>
       </div>
     </div>
+
+    <h2>Updates</h2>
+    <div class="card">
+      <div class="row">
+        <div class="text">
+          <div id="updateTitle">Updates</div>
+          <div class="desc" id="updateNote"></div>
+        </div>
+        <button class="btn" id="updateBtn">Check now</button>
+      </div>
+      <div class="row" id="autoUpdateRow">
+        <div class="text">
+          <div>Update automatically</div>
+          <div class="desc">Checks GitHub every few hours and installs new versions while your PC is idle.</div>
+        </div>
+        <span class="state" id="autoUpdateState"></span>
+        <button class="switch" id="autoUpdate" role="switch" aria-label="Update automatically"></button>
+      </div>
+    </div>
   </div>
 
   <footer id="foot">
@@ -345,7 +364,38 @@
               ? 'Claude Code is not installed on this PC.'
               : 'Show what your Claude Code sessions are doing: working, finished, needs you. Adds hooks to Claude Code’s settings (backed up first).';
     setSwitch('claudeSound', v.claudeSound);
+    renderUpdate(p.update || { status: 'idle', enabled: false }, v, p.version || '');
     reportSize();
+  }
+
+  function renderUpdate(u, v, current) {
+    let title = 'Updates', note = `island ${current}`, button = 'Check now', busy = false;
+    if (!u.enabled) {
+      note = 'Development copies don’t update themselves.';
+      busy = true;
+    } else if (u.status === 'checking') {
+      title = 'Checking for updates…';
+      busy = true;
+    } else if (u.status === 'current') {
+      title = 'You’re up to date';
+    } else if (u.status === 'downloading') {
+      title = `Downloading island ${u.version}`;
+      note = `${Math.round((u.progress || 0) * 100)}%`;
+      busy = true;
+    } else if (u.status === 'ready') {
+      title = `island ${u.version} is ready`;
+      note = v.autoUpdate ? 'It installs while your PC is idle, or restart now.' : 'Restart island to install it.';
+      button = 'Restart';
+    } else if (u.status === 'error') {
+      title = 'Couldn’t check for updates';
+      note = u.error || '';
+    }
+    $('updateTitle').textContent = title;
+    $('updateNote').textContent = note;
+    $('updateBtn').textContent = button;
+    $('updateBtn').disabled = busy;
+    setSwitch('autoUpdate', !!v.autoUpdate);
+    $('autoUpdateRow').classList.toggle('disabled', !u.enabled);
   }
 
   for (const [id, valueId, fmt] of sliders) {
@@ -370,6 +420,10 @@
     window.settings.action(state && state.claude && state.claude.status !== 'off' ? 'claude-off' : 'claude-on');
   });
   $('claudeSound').addEventListener('click', () => window.settings.set({ claudeSound: !(state && state.values.claudeSound) }));
+  $('updateBtn').addEventListener('click', () => {
+    window.settings.action(state && state.update && state.update.status === 'ready' ? 'update-install' : 'update-check');
+  });
+  $('autoUpdate').addEventListener('click', () => window.settings.set({ autoUpdate: !(state && state.values.autoUpdate) }));
   $('pin').addEventListener('click', () => window.settings.action('pin'));
   $('quit').addEventListener('click', () => window.settings.action('quit'));
   addEventListener('keydown', (e) => { if (e.key === 'Escape') window.settings.action('hide'); });

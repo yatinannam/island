@@ -12,7 +12,7 @@ Include the version, Windows build, steps to reproduce and the impact you observ
 
 ## What island accesses
 
-island runs entirely on your machine and **makes no network requests** (the live-activity pipe is local only). For review purposes, this is everything it touches:
+island runs on your machine. Its only network traffic is the update check described below, which you can turn off; the Claude Code pipe is local only. For review purposes, this is everything it touches:
 
 | Area | Access | Why |
 |---|---|---|
@@ -25,6 +25,7 @@ island runs entirely on your machine and **makes no network requests** (the live
 | Child process | Spawns `smtc.exe` (ships with the installer; compiled locally from `media/smtc.cs` in development) | WinRT media APIs. It exits when the app exits. |
 | Local pipe | Listens on the named pipe `\\.\pipe\island-<username>` (default pipe security: only your account, administrators and SYSTEM can write to it) for one-line JSON events from `islandctl.exe` | Live activities. Messages are data to display only: validated against a fixed event list, string lengths capped, rate-limited; nothing in a message is ever run or opened. |
 | Claude Code settings | Only when you turn on *Claude Code* (off by default): reads `~/.claude/settings.json` (or the one in `CLAUDE_CONFIG_DIR`), backs it up to `settings.island-backup.json` next to it, adds hooks that run `islandctl.exe hook`; turning it off removes exactly those hooks. Refuses to touch the file if it is not valid JSON. | Claude Code reports session events (working, finished, needs you) to the island. `islandctl.exe` forwards only the event name, session id, working directory, notification type and text, tool name, and the Claude process and terminal window ids; never prompts, tool input or output. The island shows only the folder name, status and tool name. |
+| Network (updates) | With *Update automatically* on (the default): a minute after start and every 6 hours, one HTTPS request to `api.github.com/repos/yatinannam/island/releases/latest`; when it lists a newer version, the installer download from `github.com/yatinannam/island/releases/download/` into `%TEMP%\island-update`. *Check now* in Settings does the same once, even with automatic updates off. No identifiers or usage data are sent; GitHub sees the request like any download. | Keeping installs current. The installer is only run after its size and SHA-256 match the digest GitHub publishes for the release asset, and only files from this repository are accepted. It installs silently while the PC is idle (or when you choose *Restart*) and starts island again. |
 | Windows state | `islandctl.exe` reads the foreground window, the shell's notification state (`SHQueryUserNotificationState`) and the Do Not Disturb profile (WNF quiet-hours state); it can bring a terminal window to the front when you click a peek or press Ctrl+Alt+J | Holding peeks during fullscreen apps and Do Not Disturb, not peeking at a terminal you are already looking at, jumping to a session's terminal. |
 
 ## Hardening
@@ -36,4 +37,4 @@ island runs entirely on your machine and **makes no network requests** (the live
 
 ## Binaries
 
-Releases are **not code-signed**. Verify the installer's SHA-256 against the value in the release notes before running it, or build it yourself from source (`bun run dist`, see [CONTRIBUTING.md](CONTRIBUTING.md)).
+Releases are **not code-signed**. Automatic updates verify the download against GitHub's published SHA-256, which protects against corrupted or swapped files in transit, not against a compromised GitHub account; code signing would add that. Verify the installer's SHA-256 against the value in the release notes before running it, or build it yourself from source (`bun run dist`, see [CONTRIBUTING.md](CONTRIBUTING.md)).

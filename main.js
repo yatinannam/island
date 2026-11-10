@@ -8,7 +8,7 @@
 
 const {
   app, BrowserWindow, screen, globalShortcut, ipcMain, Tray, Menu,
-  desktopCapturer, nativeTheme, systemPreferences, nativeImage, shell, powerMonitor,
+  desktopCapturer, nativeTheme, systemPreferences, nativeImage, shell, powerMonitor, net,
 } = require('electron');
 const { execFile } = require('child_process');
 const fs = require('fs');
@@ -21,6 +21,7 @@ const { isPromoted, setPromoted } = require('./tray-visibility');
 const { Hub } = require('./activity/hub');
 const { Ctl } = require('./activity/helper');
 const claudeHooks = require('./activity/claude-hooks');
+const { Updater } = require('./updater');
 
 // Expanded island shape, in DIP. Must match --w / --h / --shelf-h in island.html.
 const SHAPE_W = 380;
@@ -91,6 +92,19 @@ let claudeStatus = 'off';
 const hub = new Hub({ ctl, log, sound: () => settings.values.claudeSound });
 let peek = null;            // the peek showing, from hub
 let peekDisplay = null;
+
+// Updates from GitHub Releases (updater.js). Only the installed app updates
+// itself; a development copy only with ISLAND_UPDATE_URL (a local test server).
+const UPDATES = app.isPackaged || !!process.env.ISLAND_UPDATE_URL;
+const UPDATE_EVERY_MS = 6 * 60 * 60 * 1000;
+const UPDATE_IDLE_S = 10 * 60;   // installs on its own after this long without input
+const updater = new Updater({
+  version: app.getVersion(),
+  dir: path.join(app.getPath('temp'), 'island-update'),
+  fetch: (url, opts) => net.fetch(url, opts),
+  log,
+  apiUrl: process.env.ISLAND_UPDATE_URL,
+});
 
 if (!app.requestSingleInstanceLock() || process.argv.includes('--quit')) {
   // Either another copy is running (it gets our argv), or we were only
@@ -468,8 +482,36 @@ function settingsPayload() {
       installed: claudeHooks.installed(),
       error: claudeError,
     },
+    update: { ...updater.state, enabled: UPDATES },
   };
 }
+
+// ---- updates ---------------------------------------------------------------
+
+function autoCheck() {
+  if (UPDATES && settings.values.autoUpdate) updater.check();
+}
+
+// Restart now (Settings, tray) or, with automatic updates on, once the PC has
+// been idle a while and the island is not in use.
+function installUpdate() {
+  if (!updater.install({ relaunch: true })) return;
+  app.quit();
+}
+
+function installWhenIdle() {
+  if (!settings.values.autoUpdate || updater.state.status !== 'ready') return;
+  if (isOpen || peek || (settingsWin && !settingsWin.isDestroyed() && settingsWin.isVisible())) return;
+  if (powerMonitor.getSystemIdleTime() < UPDATE_IDLE_S) return;
+  installUpdate();
+}
+
+let updateStatus = '';
+updater.on('state', (s) => {
+  if (s.status !== updateStatus) log('update', s.status, s.version || '', s.error || '');
+  updateStatus = s.status;
+  sendSettings();
+});
 
 function sendSettings() {
   if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send('settings', settingsPayload());
@@ -603,13 +645,16 @@ function createTray() {
   tray.setToolTip(trayTooltip());
   // Left click: settings flyout. Right click: menu.
   tray.on('click', toggleSettings);
-  const menu = Menu.buildFromTemplate([
+  const menu = () => Menu.buildFromTemplate([
+    ...(updater.state.status === 'ready'
+      ? [{ label: `Restart to update to ${updater.state.version}`, click: installUpdate }, { type: 'separator' }]
+      : []),
     { label: 'Settings', click: showSettings },
     { label: 'Pin island open (Ctrl+Alt+I)', click: togglePinned },
     { type: 'separator' },
     { label: 'Quit (Ctrl+Alt+Q)', click: () => app.quit() },
   ]);
-  tray.on('right-click', () => tray.popUpContextMenu(menu));
+  tray.on('right-click', () => tray.popUpContextMenu(menu()));
   // Show the icon on the taskbar instead of the ^ overflow, once. After
   // that it's the user's call, from our settings or Windows' own.
   if (!settings.values.trayPromotedGuids.includes(TRAY_GUID)) {
@@ -722,8 +767,10 @@ ipcMain.handle('settings-get', () => settingsPayload());
 ipcMain.on('settings-set', (_e, patch) => {
   if (!patch || typeof patch !== 'object') return;
   const looks = ['glass', 'transparency', 'songColor'].some((k) => k in patch);
+  const updatesOn = patch.autoUpdate === true && !settings.values.autoUpdate;
   settings.update(patch);
   if (looks) preview();
+  if (updatesOn) autoCheck();
   applyConfig();
 });
 
@@ -741,6 +788,10 @@ ipcMain.on('settings-action', (_e, action) => {
     setPromoted(TRAY_GUID, action.endsWith('-on')).then(refreshTrayShown);
   } else if (action === 'shelf-clear') {
     shelf.clear();
+  } else if (action === 'update-check') {
+    if (UPDATES) updater.check();
+  } else if (action === 'update-install') {
+    installUpdate();
   } else if ((action === 'claude-on' && ctlExe) || action === 'claude-off') {
     try {
       if (action === 'claude-on') claudeHooks.connect(ctlExe);
@@ -815,6 +866,12 @@ app.whenReady().then(async () => {
   powerMonitor.on('suspend', () => { suspended = true; updateLocked(); });
   powerMonitor.on('resume', () => { suspended = false; updateLocked(); });
   setInterval(tick, TICK_MS);
+  if (UPDATES) {
+    // A minute in: the installer that just updated island has exited by then.
+    setTimeout(() => { updater.clean(); autoCheck(); }, 60 * 1000);
+    setInterval(autoCheck, UPDATE_EVERY_MS);
+    setInterval(installWhenIdle, 60 * 1000);
+  }
   registerShortcut('Control+Alt+I', togglePinned);
   registerShortcut('Control+Alt+Q', () => app.quit());
   nativeTheme.on('updated', refreshTheme);
