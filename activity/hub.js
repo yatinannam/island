@@ -173,10 +173,12 @@ class Hub extends EventEmitter {
         break;
       case 'PermissionRequest':
         s.askTool = e.tool; // the permission_prompt notification that follows has no tool name
+        this.midTurn(s, e);
         break;
       case 'PostToolUse':
       case 'PostToolUseFailure':
       case 'PermissionDenied':
+        this.midTurn(s, e);
         // Claude moved on: the prompt was answered.
         if (s.state === 'needs' && e.t > s.needsAt) {
           s.state = 'working';
@@ -206,6 +208,7 @@ class Hub extends EventEmitter {
         if (s.durationMs >= MIN_TURN_MS) this.add(s, s.state);
         break;
       case 'SubagentStop':
+        this.midTurn(s, e);
         s.subagents++;
         break;
       case 'SessionEnd':
@@ -217,6 +220,19 @@ class Hub extends EventEmitter {
     }
     this.log('activity', e.event, e.ntype || e.tool || '', this.label(s), '->', s.state);
     this.emitSessions();
+  }
+
+  // Tool and subagent events only happen during a turn. One for a session not
+  // known to be working means island missed the turn's start (it started or
+  // restarted mid-turn, e.g. after an update): count the turn from here, so
+  // its finish still peeks. Not for events older than the last finish (async
+  // hooks can arrive a little out of order).
+  midTurn(s, e) {
+    if (s.state === 'working' || s.state === 'needs' || e.t <= s.endedAt) return;
+    s.state = 'working';
+    s.turnStart = e.t;
+    s.subagents = 0;
+    s.tool = '';
   }
 
   // ---- peeks -----------------------------------------------------------------
