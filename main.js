@@ -112,9 +112,12 @@ if (!app.requestSingleInstanceLock() || process.argv.includes('--quit')) {
   app.quit();
 }
 // `electron . --quit` closes the running copy cleanly; launching again
-// without it opens the settings flyout.
+// without it opens the settings flyout. A copy started at sign-in (`--login`)
+// changes nothing: with two login items, the second one used to open the
+// flyout at every sign-in.
 app.on('second-instance', (_e, argv) => {
   if (argv.includes('--quit')) app.quit();
+  else if (argv.includes('--login')) log('second copy started at sign-in: ignored');
   else if (settingsWin) showSettings();
 });
 
@@ -458,9 +461,23 @@ function togglePinned() {
 
 // ---- settings flyout --------------------------------------------------------
 
-function loginItem() {
+// Started by Windows at sign-in: `--login`, so a second copy started the same
+// way (the installed app and a dev copy both set to start with Windows) quits
+// quietly instead of opening the settings flyout in the first one.
+function loginItem(login = true) {
   // In development the app runs as electron.exe <project dir>.
-  return { path: process.execPath, args: app.isPackaged ? [] : [app.getAppPath()] };
+  const args = app.isPackaged ? [] : [app.getAppPath()];
+  return { path: process.execPath, args: login ? [...args, '--login'] : args };
+}
+
+// Before 0.4.1 the login item had no `--login`. Electron only reports a login
+// item as on when the registry value matches path and args exactly, so an old
+// one read as off: rewrite it in the new form.
+function upgradeLoginItem() {
+  if (app.getLoginItemSettings(loginItem()).openAtLogin) return;
+  if (!app.getLoginItemSettings(loginItem(false)).openAtLogin) return;
+  app.setLoginItemSettings({ ...loginItem(), openAtLogin: true });
+  log('login item: added --login');
 }
 
 function settingsPayload() {
@@ -850,6 +867,7 @@ app.whenReady().then(async () => {
   if (sww >= 0 && ['on', 'off'].includes(process.argv[sww + 1])) {
     app.setLoginItemSettings({ ...loginItem(), openAtLogin: process.argv[sww + 1] === 'on' });
   }
+  upgradeLoginItem();
   settings.load();
   shelf.load();
   theme = await readTheme();
