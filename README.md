@@ -32,7 +32,7 @@ Drop files, folders or images from a browser onto the island, and drag them into
 
 ### Claude Code sessions (optional)
 
-Lists your Claude Code sessions and what each one is doing: working, waiting for your input, or finished. Off by default; turn it on in Settings.
+Lists your Claude Code sessions and what each one is doing: working, waiting for your input, or finished. Subagents get their own lines under their session, and a session that is waiting on its subagents finishes once, when they are all done. Off by default; turn it on in Settings.
 
 <img src="docs/images/claude-code.png" alt="Claude Code page: one session needs input, one is working, one has finished">
 
