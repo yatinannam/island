@@ -37,8 +37,9 @@ const HOLD_QUNS = new Set([2, 3, 4, 6, 7]);
 
 const EVENTS = new Set([
   'UserPromptSubmit', 'PermissionRequest', 'PostToolUse', 'PostToolUseFailure', 'PermissionDenied',
-  'Notification', 'Stop', 'StopFailure', 'SubagentStop', 'SessionEnd',
+  'Notification', 'Stop', 'StopFailure', 'SubagentStart', 'SubagentStop', 'SessionEnd',
 ]);
+const AGENT_ID = /^[\w-]{1,40}$/;
 // Notification types that mean "Claude is blocked on you". Not idle_prompt
 // (Claude finished a while ago and you haven't typed): that session is just
 // finished, and Yatin found an amber "waiting for you" on it confusing.
@@ -144,6 +145,13 @@ class Hub extends EventEmitter {
       ntype: str(m.ntype, 60),
       message: str(m.message, 300),
       tool: str(m.tool, 80),
+      // Subagents: events fired inside one carry its id; Stop lists the ones
+      // still running in the background; a report-back prompt is not the user typing.
+      agentId: typeof m.agentId === 'string' && AGENT_ID.test(m.agentId) ? m.agentId : '',
+      agent: str(m.agent, 40),
+      notif: m.notif === 1,
+      bgAgents: Array.isArray(m.bgAgents)
+        ? m.bgAgents.filter((id) => typeof id === 'string' && AGENT_ID.test(id)).slice(0, 20) : null,
       pid: int(m.pid),
       hwnd: int(m.hwnd),
       t: Number.isFinite(m.t) && Math.abs(m.t - now) < 60000 ? m.t : now,

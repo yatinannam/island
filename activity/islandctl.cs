@@ -42,9 +42,13 @@ static class IslandCtl {
 
   // ---- hook ------------------------------------------------------------------
 
+  // `prompt` is read only to tell a subagent's report-back from a typed
+  // prompt; its text is never forwarded.
   static readonly HashSet<string> Wanted = new HashSet<string> {
     "hook_event_name", "session_id", "cwd", "notification_type", "message", "tool_name", "reason", "agent_type",
+    "agent_id", "prompt",
   };
+  const string ReportBack = "<task-notification>";
 
   static void Hook(bool probe) {
     // Read all of stdin first (Claude Code writes the whole JSON, which can be
@@ -69,6 +73,22 @@ static class IslandCtl {
     Field(sb, "tool", Get(f, "tool_name"), 80);
     Field(sb, "reason", Get(f, "reason"), 60);
     Field(sb, "agent", Get(f, "agent_type"), 80);
+    // Events fired inside a subagent carry its id; the main agent's do not.
+    Field(sb, "agentId", Get(f, "agent_id"), 40);
+    if (Get(f, "prompt").StartsWith(ReportBack, StringComparison.Ordinal)) sb.Append(",\"notif\":1");
+    // Stop: the subagents still running in the background (the session waits for them).
+    if (evt == "Stop") {
+      string tasks = TopLevelRaw(input, "background_tasks");
+      if (tasks != null) {
+        sb.Append(",\"bgAgents\":[");
+        var ids = RunningSubagents(tasks);
+        for (int n = 0; n < ids.Count && n < 20; n++) {
+          if (n > 0) sb.Append(',');
+          JsonString(sb, ids[n], 100);
+        }
+        sb.Append(']');
+      }
+    }
     sb.Append(",\"pid\":").Append(claudePid);
     sb.Append(",\"hwnd\":").Append(hwnd.ToInt64());
     sb.Append(",\"t\":").Append((long)(DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds);
@@ -85,8 +105,13 @@ static class IslandCtl {
 
   static void Field(StringBuilder sb, string name, string value, int max) {
     if (string.IsNullOrEmpty(value)) return;
+    sb.Append(",\"").Append(name).Append("\":");
+    JsonString(sb, value, max);
+  }
+
+  static void JsonString(StringBuilder sb, string value, int max) {
     if (value.Length > max) value = value.Substring(0, max);
-    sb.Append(",\"").Append(name).Append("\":\"");
+    sb.Append('"');
     foreach (char c in value) {
       if (c == '"') sb.Append("\\\"");
       else if (c == '\\') sb.Append("\\\\");
@@ -94,6 +119,29 @@ static class IslandCtl {
       else sb.Append(c);
     }
     sb.Append('"');
+  }
+
+  // Ids of background_tasks entries that are subagents still running
+  // (not shells, monitors or teammates: those never keep a session waiting).
+  static List<string> RunningSubagents(string array) {
+    var ids = new List<string>();
+    var keys = new HashSet<string> { "id", "type", "status" };
+    int i = SkipWs(array, 0);
+    if (i >= array.Length || array[i] != '[') return ids;
+    i++;
+    while (true) {
+      i = SkipWs(array, i);
+      if (i >= array.Length || array[i] == ']') break;
+      if (array[i] == ',') { i++; continue; }
+      int end = SkipValue(array, i);
+      if (array[i] == '{') {
+        var t = TopLevelStrings(array.Substring(i, end - i), keys);
+        if (Get(t, "type") == "subagent" && Get(t, "status") == "running" && Get(t, "id").Length > 0) ids.Add(Get(t, "id"));
+      }
+      if (end <= i) break;
+      i = end;
+    }
+    return ids;
   }
 
   // Same name the island listens on: per Windows user.
@@ -140,6 +188,27 @@ static class IslandCtl {
       else i = SkipValue(s, i);
     }
     return d;
+  }
+
+  // The raw JSON of one top-level key's value, or null when it is absent.
+  static string TopLevelRaw(string s, string want) {
+    int i = SkipWs(s, 0);
+    if (i >= s.Length || s[i] != '{') return null;
+    i++;
+    while (true) {
+      i = SkipWs(s, i);
+      if (i >= s.Length || s[i] == '}') return null;
+      if (s[i] == ',') { i++; continue; }
+      if (s[i] != '"') return null;
+      string key = ReadString(s, ref i);
+      i = SkipWs(s, i);
+      if (i >= s.Length || s[i] != ':') return null;
+      i = SkipWs(s, i + 1);
+      int end = SkipValue(s, i);
+      if (key == want) return s.Substring(i, end - i);
+      if (end <= i) return null;
+      i = end;
+    }
   }
 
   static int SkipWs(string s, int i) {
