@@ -20,9 +20,12 @@ const EVENTS = [
   'Notification',         // needs you: permission prompt, question
   'PermissionRequest',    // which tool a permission prompt is for
   'PostToolUse', 'PostToolUseFailure', 'PermissionDenied', // Claude moved on: clears needs-you
-  'SubagentStop',         // counted on the session
+  'SubagentStart', 'SubagentStop', // subagents, each listed under its session
   'SessionEnd',           // session closed
 ];
+// Added after 0.4: a connection made then lacks only these, and island adds
+// them by itself (upgrade) instead of showing "Not fully connected".
+const NEW_EVENTS = ['SubagentStart'];
 
 const isOurs = (h) => !!h && h.type === 'command' && typeof h.command === 'string'
   && /islandctl\.exe$/i.test(h.command) && Array.isArray(h.args) && h.args[0] === 'hook';
@@ -67,23 +70,45 @@ function strip(data) {
   return changed;
 }
 
-// 'on' (all hooks, pointing at exe), 'other' (ours, but another islandctl.exe,
-// e.g. a dev copy), 'partial', or 'off'. Without exe (not located yet),
-// all hooks present is 'on'.
-function status(exe) {
-  let data;
-  try { data = read(); } catch { return 'off'; }
+// Our hooks in the settings: event -> islandctl path.
+function ours(data) {
   const found = new Map();
   for (const [event, groups] of Object.entries(data.hooks || {})) {
     for (const g of Array.isArray(groups) ? groups : []) {
       for (const h of (g && Array.isArray(g.hooks) ? g.hooks : [])) if (isOurs(h)) found.set(event, h.command);
     }
   }
+  return found;
+}
+
+const samePath = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
+
+// 'on' (all hooks, pointing at exe), 'other' (ours, but another islandctl.exe,
+// e.g. a dev copy), 'partial', or 'off'. Without exe (not located yet),
+// all hooks present is 'on'.
+function status(exe) {
+  let data;
+  try { data = read(); } catch { return 'off'; }
+  const found = ours(data);
   if (!found.size) return 'off';
   if (EVENTS.some((e) => !found.has(e))) return 'partial';
   if (!exe) return 'on';
-  const same = [...found.values()].every((c) => path.resolve(c).toLowerCase() === path.resolve(exe).toLowerCase());
-  return same ? 'on' : 'other';
+  return [...found.values()].every((c) => samePath(c, exe)) ? 'on' : 'other';
+}
+
+// A connection from an older island (every hook ours, pointing at this
+// islandctl, missing only events added since): add those. Returns whether it
+// wrote. Anything else (another copy's hooks, a hook removed by hand) is
+// left for the user to switch off and on.
+function upgrade(exe) {
+  let data;
+  try { data = read(); } catch { return false; }
+  const found = ours(data);
+  if (!found.size || ![...found.values()].every((c) => samePath(c, exe))) return false;
+  const missing = EVENTS.filter((e) => !found.has(e));
+  if (!missing.length || !missing.every((e) => NEW_EVENTS.includes(e))) return false;
+  connect(exe);
+  return true;
 }
 
 // No config folder, no Claude Code.
@@ -108,4 +133,4 @@ function disconnect() {
   if (strip(data)) write(data);
 }
 
-module.exports = { status, installed, connect, disconnect, FILE, BACKUP, EVENTS };
+module.exports = { status, installed, connect, disconnect, upgrade, FILE, BACKUP, EVENTS };

@@ -380,6 +380,18 @@ let jumpKey = null;         // null, 'ours', or 'taken' (another app has it; not
 function refreshClaude() {
   const was = claudeStatus;
   claudeStatus = claudeHooks.status(ctlExe);
+  // Connected by an older island: add the hooks added since (SubagentStart).
+  if (ctlExe && claudeStatus === 'partial') {
+    try {
+      if (claudeHooks.upgrade(ctlExe)) {
+        claudeStatus = claudeHooks.status(ctlExe);
+        log('claude hooks upgraded:', claudeStatus);
+        diag.write('claude hooks upgraded:', claudeStatus);
+      }
+    } catch (e) {
+      diag.write('claude hooks upgrade failed:', e.message);
+    }
+  }
   const on = claudeStatus !== 'off';
   if (on && !hub.running) hub.start();
   else if (!on && hub.running) hub.stop();
