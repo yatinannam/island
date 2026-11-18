@@ -8,7 +8,11 @@
 //   ran 10s or more and its terminal is not the foreground window.
 // - Needs you (a permission prompt, a question): peek always,
 //   stays until that session moves on, the peek is clicked or dismissed.
-// - Subagent finished: counted on the session, no peek.
+// - Subagents: each is its own entry under its session (events fired inside
+//   one carry its agent id), never the session's own state. While they still
+//   run after the main agent's reply, the session is "waiting" (no peek); it
+//   finishes, and peeks, once: when the main agent wraps up after the last
+//   one. A subagent's permission prompt is a needs-you of its session.
 // - Held while a fullscreen app, a presentation, quiet time or Do Not Disturb
 //   is on, and while the PC is locked; shown afterwards without a chime. Held
 //   for more than 30 min: dropped (still listed).
@@ -29,6 +33,11 @@ const GAP_MS = 350;             // between two peeks, so one retracts before the
 const MAX_HELD_MS = 30 * 60 * 1000;
 const KEEP_STOPPED_MS = 60 * 60 * 1000;
 const MAX_SESSIONS = 12;
+const MAX_AGENTS = 20;          // per session
+const ASKER_MS = 10000;         // a permission request this recent says which agent a prompt is for
+// Waiting, the last subagent ended, and the main agent never came back (the
+// report-back normally follows within a second): finish anyway.
+const WAIT_DONE_MS = 60 * 1000;
 const TICK_MS = 250;
 const HOLD_POLL_MS = 2000;
 // SHQueryUserNotificationState: QUNS_BUSY, QUNS_RUNNING_D3D_FULL_SCREEN,
@@ -168,7 +177,12 @@ class Hub extends EventEmitter {
       while (used.has(num)) num++;
       s = {
         id: e.session, project, num, state: 'idle', turnStart: 0, endedAt: 0, durationMs: 0,
-        needsKind: null, needsAt: 0, tool: '', askTool: '', subagents: 0, pid: 0, hwnd: 0, lastEventAt: 0,
+        needsKind: null, needsAt: 0, tool: '', askTool: '', pid: 0, hwnd: 0, lastEventAt: 0,
+        // Subagents: id -> agent; how many this task ran; the main agent has
+        // replied (Stop) while some still run; which agent a needs-you is
+        // for ('' = the main agent); the last agent that asked for permission;
+        // when the last agent of a waiting session ended.
+        agents: new Map(), agentsUsed: 0, mainDone: false, needsAgent: '', asker: null, waitDoneAt: 0,
       };
       this.sessions.set(s.id, s);
       this.trim(s.id); // never the new one: it starts "idle", the lowest rank but stopped
@@ -182,80 +196,245 @@ class Hub extends EventEmitter {
 
   onEvent(e) {
     const s = this.session(e);
-    s.lastEventAt = Math.max(s.lastEventAt, e.t);
+    s.lastEventAt = Math.max(s.lastEventAt, e.t); // subagents' events too: a session busy in them is not idle
     if (e.pid) s.pid = e.pid;
     if (e.hwnd) s.hwnd = e.hwnd;
+    if (e.agentId) this.onAgentEvent(s, e);
+    else this.onMainEvent(s, e);
+    this.log('activity', e.event, e.agentId ? `agent ${e.agent || e.agentId}` : '', e.ntype || e.tool || '',
+      this.label(s), '->', s.state);
+    this.emitSessions();
+  }
+
+  // The main agent's events: the session's own state.
+  onMainEvent(s, e) {
     switch (e.event) {
       case 'UserPromptSubmit':
+        if (e.notif) {
+          // A subagent (or another background task) reporting back: the same
+          // task goes on. After the task had finished, a new stretch of work.
+          if (s.state !== 'working' && s.state !== 'waiting' && s.state !== 'needs') {
+            s.turnStart = e.t;
+            s.agentsUsed = this.active(s).length;
+            this.drop(s.id);
+          }
+          s.mainDone = false;
+          if (s.state !== 'needs') s.state = 'working';
+          break;
+        }
+        // The user: a new task. Running agents (background ones can outlive
+        // the turn that started them) stay; done ones go.
         s.state = 'working';
         s.turnStart = e.t;
-        s.subagents = 0;
         s.tool = '';
         s.needsKind = null;
+        s.needsAgent = '';
+        s.asker = null;
+        s.mainDone = false;
+        s.waitDoneAt = 0;
+        for (const [id, a] of s.agents) if (a.state === 'done') s.agents.delete(id);
+        s.agentsUsed = s.agents.size;
         this.drop(s.id);
         break;
       case 'PermissionRequest':
         s.askTool = e.tool; // the permission_prompt notification that follows has no tool name
+        s.asker = null;     // the main agent asks
         this.midTurn(s, e);
         break;
       case 'PostToolUse':
       case 'PostToolUseFailure':
       case 'PermissionDenied':
         this.midTurn(s, e);
-        // Claude moved on: the prompt was answered.
-        if (s.state === 'needs' && e.t > s.needsAt) {
-          s.state = 'working';
-          s.needsKind = null;
-          s.tool = '';
-          this.drop(s.id);
-        }
+        // Claude moved on: the prompt was answered. Only the main agent's own
+        // prompt: one of its subagents may still be waiting on you.
+        if (s.state === 'needs' && !s.needsAgent && e.t > s.needsAt) this.clearNeeds(s, e.t);
         break;
       case 'Notification': {
         const kind = NEEDS[e.ntype];
         if (!kind) break;
-        s.state = 'needs';
-        s.needsKind = kind;
-        s.needsAt = e.t;
-        s.tool = kind === 'permission' ? (s.askTool || toolIn(e.message)) : '';
-        this.add(s, 'needs');
+        // The notification has no agent id: a permission request from an agent
+        // just before it means that agent is the one asking.
+        const a = s.asker && e.t - s.asker.at < ASKER_MS ? s.agents.get(s.asker.id) : null;
+        this.markNeeds(s, kind, e, a || null);
         break;
       }
-      case 'Stop':
-      case 'StopFailure':
-        s.state = e.event === 'Stop' ? 'finished' : 'failed';
-        s.endedAt = e.t;
-        s.durationMs = s.turnStart ? Math.max(0, e.t - s.turnStart) : 0;
-        s.needsKind = null;
-        s.tool = '';
-        this.drop(s.id);
-        if (s.durationMs >= MIN_TURN_MS) this.add(s, s.state);
+      case 'Stop': {
+        // Background subagents Claude Code still runs. One island thinks runs
+        // but is not listed ended without a SubagentStop reaching us.
+        if (e.bgAgents) {
+          const still = new Set(e.bgAgents);
+          for (const a of s.agents.values()) if (a.state !== 'done' && !still.has(a.id)) this.endAgent(s, a, e.t);
+          for (const id of e.bgAgents) if (!s.agents.has(id)) this.agentFor(s, { agentId: id, agent: '', t: e.t, event: '' });
+        }
+        if (!this.active(s).length) { this.finish(s, e.t, false); break; }
+        // The main agent replied, its subagents still work: the task goes on.
+        s.mainDone = true;
+        s.waitDoneAt = 0;
+        if (s.state !== 'needs' || !s.needsAgent) {
+          s.state = 'waiting';
+          s.needsKind = null;
+          s.needsAgent = '';
+          s.tool = '';
+          this.drop(s.id);
+        }
         break;
+      }
+      case 'StopFailure':
+        this.finish(s, e.t, true);
+        break;
+      case 'SubagentStart':
       case 'SubagentStop':
-        this.midTurn(s, e);
-        s.subagents++;
+        this.midTurn(s, e); // from an islandctl without agent ids
         break;
       case 'SessionEnd':
         s.state = 'stopped';
         s.endedAt = e.t;
         s.needsKind = null;
+        s.needsAgent = '';
+        s.mainDone = false;
+        for (const a of s.agents.values()) this.endAgent(s, a, e.t);
         this.drop(s.id);
         break;
     }
-    this.log('activity', e.event, e.ntype || e.tool || '', this.label(s), '->', s.state);
-    this.emitSessions();
+  }
+
+  // Events fired inside a subagent: that agent's line, never the main state,
+  // except a needs-you (the session needs you) and a missed turn start.
+  onAgentEvent(s, e) {
+    if (s.state !== 'waiting') this.midTurn(s, e);
+    const a = this.agentFor(s, e);
+    a.lastEventAt = Math.max(a.lastEventAt, e.t);
+    if (a.state === 'done') return; // late events of a finished agent
+    switch (e.event) {
+      case 'SubagentStop':
+        this.endAgent(s, a, e.t);
+        break;
+      case 'PermissionRequest':
+        a.askTool = e.tool;
+        s.asker = { id: a.id, at: e.t };
+        break;
+      case 'Notification': {
+        const kind = NEEDS[e.ntype];
+        if (kind) this.markNeeds(s, kind, e, a);
+        break;
+      }
+      case 'PostToolUse':
+      case 'PostToolUseFailure':
+      case 'PermissionDenied':
+        if (e.tool) a.tool = e.tool;
+        if (a.state === 'needs' && e.t > a.needsAt) a.state = 'running';
+        // Its own prompt; or, with the main agent done (so not asking), one we
+        // could not tie to an agent.
+        if (s.state === 'needs' && e.t > s.needsAt && (s.needsAgent === a.id || (!s.needsAgent && s.mainDone))) {
+          this.clearNeeds(s, e.t);
+        }
+        break;
+    }
+  }
+
+  // The agent for an event, created when new (also when island started
+  // mid-run). Labels: the agent type, general-purpose as "Agent", repeats
+  // numbered within the session.
+  agentFor(s, e) {
+    let a = s.agents.get(e.agentId);
+    if (!a) {
+      const type = e.agent || '';
+      const base = !type || type === 'general-purpose' ? 'Agent' : type;
+      let num = 1;
+      for (const o of s.agents.values()) if (o.base === base) num = Math.max(num, o.num + 1);
+      a = {
+        id: e.agentId, type, base, num, label: num > 1 ? `${base} ${num}` : base,
+        state: 'running', tool: '', askTool: '', startedAt: e.t, endedAt: 0, lastEventAt: e.t, needsAt: 0,
+      };
+      s.agents.set(a.id, a);
+      s.agentsUsed++;
+      this.trimAgents(s);
+    } else if (e.event === 'SubagentStart' && a.state === 'done') {
+      a.state = 'running'; // resumed
+      a.endedAt = 0;
+    }
+    return a;
+  }
+
+  // At most MAX_AGENTS per session: the oldest done ones go first.
+  trimAgents(s) {
+    while (s.agents.size > MAX_AGENTS) {
+      const list = [...s.agents.values()];
+      const done = list.filter((a) => a.state === 'done').sort((x, y) => x.endedAt - y.endedAt);
+      const victim = done[0] || list.sort((x, y) => x.startedAt - y.startedAt)[0];
+      s.agents.delete(victim.id);
+    }
+  }
+
+  active(s) {
+    return [...s.agents.values()].filter((a) => a.state !== 'done');
+  }
+
+  endAgent(s, a, t) {
+    if (a.state === 'done') return;
+    a.state = 'done';
+    a.endedAt = t;
+    if (s.needsAgent === a.id) this.clearNeeds(s, t);
+    if (s.state === 'waiting' && !this.active(s).length && !s.waitDoneAt) s.waitDoneAt = t;
+  }
+
+  markNeeds(s, kind, e, a) {
+    s.state = 'needs';
+    s.needsKind = kind;
+    s.needsAt = e.t;
+    s.needsAgent = a ? a.id : '';
+    if (a) {
+      a.state = 'needs';
+      a.needsAt = e.t;
+    }
+    const asked = a ? a.askTool : s.askTool;
+    s.tool = kind === 'permission' ? (asked || toolIn(e.message)) : '';
+    this.add(s, 'needs');
+  }
+
+  // The prompt was answered: back to work, or to waiting on subagents.
+  clearNeeds(s, t) {
+    s.needsKind = null;
+    s.needsAgent = '';
+    s.tool = '';
+    s.state = s.mainDone ? 'waiting' : 'working';
+    if (s.state === 'waiting' && !this.active(s).length && !s.waitDoneAt) s.waitDoneAt = t;
+    this.drop(s.id);
+  }
+
+  // The task is over: finished (or ended on an error), peeks when it ran long enough.
+  finish(s, t, failed) {
+    s.state = failed ? 'failed' : 'finished';
+    s.endedAt = t;
+    s.durationMs = s.turnStart ? Math.max(0, t - s.turnStart) : 0;
+    s.needsKind = null;
+    s.needsAgent = '';
+    s.tool = '';
+    s.mainDone = false;
+    s.waitDoneAt = 0;
+    this.drop(s.id);
+    if (s.durationMs >= MIN_TURN_MS) this.add(s, s.state);
   }
 
   // Tool and subagent events only happen during a turn. One for a session not
   // known to be working means island missed the turn's start (it started or
   // restarted mid-turn, e.g. after an update): count the turn from here, so
   // its finish still peeks. Not for events older than the last finish (async
-  // hooks can arrive a little out of order).
+  // hooks can arrive a little out of order). A main-agent event while waiting
+  // on subagents: the main agent works again.
   midTurn(s, e) {
     if (s.state === 'working' || s.state === 'needs' || e.t <= s.endedAt) return;
+    if (s.state === 'waiting') {
+      s.state = 'working';
+      s.mainDone = false;
+      s.waitDoneAt = 0;
+      return;
+    }
     s.state = 'working';
     s.turnStart = e.t;
-    s.subagents = 0;
     s.tool = '';
+    s.mainDone = false;
+    s.agentsUsed = this.active(s).length;
   }
 
   // ---- peeks -----------------------------------------------------------------
@@ -308,6 +487,7 @@ class Hub extends EventEmitter {
       label: this.label(s),
       tool: p.kind === 'needs' ? s.tool : '',
       durationMs: p.kind === 'needs' ? 0 : s.durationMs,
+      agents: p.kind === 'needs' ? 0 : s.agentsUsed,
       chime: chime && this.sound(),
     };
   }
@@ -391,16 +571,22 @@ class Hub extends EventEmitter {
     }
   }
 
-  // Sessions whose Claude process is gone end as "stopped"; old ones go.
-  sweep() {
-    const now = Date.now();
+  // Sessions whose Claude process is gone end as "stopped"; old ones go; a
+  // session left waiting with no subagent running finishes.
+  sweep(now = Date.now()) {
     let changed = false;
     for (const s of this.sessions.values()) {
       if (s.state !== 'stopped' && s.pid && !alive(s.pid)) {
         s.state = 'stopped';
         s.endedAt = now;
         s.needsKind = null;
+        s.needsAgent = '';
+        s.mainDone = false;
+        for (const a of s.agents.values()) this.endAgent(s, a, now);
         this.drop(s.id);
+        changed = true;
+      } else if (s.state === 'waiting' && s.waitDoneAt && !this.active(s).length && now - s.waitDoneAt > WAIT_DONE_MS) {
+        this.finish(s, now, false);
         changed = true;
       }
     }
@@ -493,7 +679,11 @@ class Hub extends EventEmitter {
         durationMs: s.durationMs,
         endedAt: s.endedAt,
         lastEventAt: s.lastEventAt,
-        subagents: s.subagents,
+        agentsUsed: s.agentsUsed,
+        agents: [...s.agents.values()].map((a) => ({
+          id: a.id, label: a.label, type: a.type, state: a.state, tool: a.tool,
+          startedAt: a.startedAt, endedAt: a.endedAt, lastEventAt: a.lastEventAt,
+        })),
         canJump: !!s.hwnd && s.state !== 'stopped',
       }));
   }
@@ -504,7 +694,7 @@ class Hub extends EventEmitter {
 }
 
 function rank(s) {
-  return { needs: 0, working: 1, failed: 2, finished: 2, idle: 3, stopped: 4 }[s.state] ?? 3;
+  return { needs: 0, working: 1, waiting: 1, failed: 2, finished: 2, idle: 3, stopped: 4 }[s.state] ?? 3;
 }
 
 // "Claude needs your permission to use Bash" -> "Bash"
