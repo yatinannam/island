@@ -8,7 +8,7 @@
 
 [![Latest release](https://img.shields.io/github/v/release/yatinannam/island?style=flat-square&label=release&color=2b2b30)](https://github.com/yatinannam/island/releases/latest) ![Windows 10 and 11](https://img.shields.io/badge/Windows-10%20%7C%2011-2b2b30?style=flat-square) [![MIT license](https://img.shields.io/github/license/yatinannam/island?style=flat-square&color=2b2b30)](LICENSE)
 
-[**Download**](https://github.com/yatinannam/island/releases/latest) &nbsp;·&nbsp; [Features](#features) &nbsp;·&nbsp; [Install](#install) &nbsp;·&nbsp; [Usage](#usage) &nbsp;·&nbsp; [Claude Code](#claude-code) &nbsp;·&nbsp; [Architecture](docs/ARCHITECTURE.md)
+[**Download**](https://github.com/yatinannam/island/releases/latest) &nbsp;·&nbsp; [Features](#features) &nbsp;·&nbsp; [Install](#install) &nbsp;·&nbsp; [Usage](#usage) &nbsp;·&nbsp; [Claude Code](#claude-code) &nbsp;·&nbsp; [Troubleshooting](#troubleshooting) &nbsp;·&nbsp; [Architecture](docs/ARCHITECTURE.md)
 
 <br>
 
@@ -32,9 +32,9 @@ Drop files, folders or images from a browser onto the island, and drag them into
 
 ### Claude Code sessions (optional)
 
-Lists your Claude Code sessions and what each one is doing: working, waiting for your input, or finished. Subagents get their own lines under their session, and a session that is waiting on its subagents finishes once, when they are all done. Off by default; turn it on in Settings.
+Lists your Claude Code sessions and what each one is doing: working, waiting for your input, or finished. Subagents get their own lines under their session, so you can see what each one is up to, and a session that is waiting on its subagents finishes once, when they are all done. Off by default; turn it on in Settings.
 
-<img src="docs/images/claude-code.png" alt="Claude Code page: one session needs input, one is working, one has finished">
+<img src="docs/images/claude-code.png" alt="Claude Code page: one session needs input for Bash; another is waiting on one subagent, Explore, which is running Grep">
 
 When a task finishes or Claude needs your input, the closed island shows a small notification, a *peek*. Click it, or press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>J</kbd>, to switch to that session's terminal.
 
@@ -45,7 +45,8 @@ When a task finishes or Claude needs your input, the closed island shows a small
 - A glass background that blurs the desktop behind the island, like Windows acrylic, tinted by the album art. It follows light and dark mode; a solid background is available in Settings.
 - Spring animations for opening, closing and switching pages. When you swipe, the pages follow your fingers and settle on the next page.
 - Never takes focus from the app you are typing in, lets clicks through while closed, and holds peeks while a fullscreen app or Do Not Disturb is on.
-- Updates itself from GitHub Releases while your PC is idle.
+- Works over fullscreen videos and games too: rest the cursor at the top and the island drops down.
+- Can start with Windows (a switch in Settings), and updates itself from GitHub Releases while your PC is idle.
 - About 1.5% of one CPU core when idle.
 
 ## Install
@@ -63,7 +64,7 @@ Requires Windows 11, or Windows 10 version 2004 or later (x64).
 > Get-FileHash .\island-setup-<version>.exe -Algorithm SHA256
 > ```
 
-Settings and the shelf are stored in `%APPDATA%\island`. Uninstalling from *Settings > Apps* leaves that folder in place.
+Settings, the shelf and a small timing log are stored in `%APPDATA%\island`. Uninstalling from *Settings > Apps* leaves that folder in place.
 
 ## Usage
 
@@ -75,6 +76,7 @@ Settings and the shelf are stored in `%APPDATA%\island`. Uninstalling from *Sett
 | Add files to the shelf | Drop them on the island |
 | Use a file from the shelf | Drag it into any app, or double-click to open it |
 | Pin the island open | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>I</kbd> |
+| Go to the Claude Code session that needs you | Click its peek, or <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>J</kbd> |
 | Open Settings | Click the tray icon |
 | Quit | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Q</kbd>, or right-click the tray icon |
 
@@ -87,7 +89,8 @@ Claude Code support is off by default. To turn it on, open Settings from the tra
 | When a session | The island |
 |---|---|
 | Is working | Lists it on the Claude Code page with the elapsed time |
-| Finishes a task of 10 seconds or more | Shows a green peek for 5 seconds, with a sound |
+| Runs subagents | Lists each one under the session with the tool it is using; the session shows *waiting on N agents* until they are done |
+| Finishes a task of 10 seconds or more | Shows a green peek for 5 seconds, with a sound, once per task, subagents included |
 | Needs your input (a permission prompt or a question) | Shows an amber peek until Claude continues, or you click or dismiss it |
 | Ends | Marks it as closed |
 
@@ -98,14 +101,18 @@ Peeks show only the project folder name, the status and the tool name, never you
 ## Known limitations
 
 - In glass mode the island does not appear in screenshots or screen recordings: it is excluded from screen capture so that it can blur what is behind it. Switch to the solid background to record it.
-- The island's window stays above fullscreen apps, fully transparent and click-through while closed. Exclusive-fullscreen games are not overlaid.
+- The island's window stays above fullscreen apps, fully transparent and click-through while closed, so it can open over them. Exclusive-fullscreen games are not overlaid.
 - Tested on single-display setups only.
 - Apps that don't use Windows' media controls don't appear, and apps that publish no timeline show no progress bar or seeking.
 - Switching to a Claude Code session brings its terminal window forward, but not a specific Windows Terminal tab, and not a terminal running as administrator. Claude Code sends no event when a turn is interrupted with Esc, so that session shows as idle after 2 minutes.
 
+## Troubleshooting
+
+island keeps a small timing log at `%APPDATA%\island\island.log`: when it started, slept, woke and was locked, and any open that was slow. If something glitches, such as the island being slow to drop down or a swipe going the wrong way, press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd> right away. That marks the moment in the log, along with your last few seconds of swipes, so the log can be attached to an [issue](https://github.com/yatinannam/island/issues).
+
 ## Privacy
 
-The only network traffic is the update check: every 6 hours the app asks GitHub for the latest release, and downloads the installer when there is a newer one. No identifiers or usage data are sent, and turning off *Update automatically* in Settings stops it. Otherwise the app reads what Windows' media controls publish, captures the screen behind the island only to blur it (in memory, never saved), listens to your speakers' output only to move the equalizer bars, and, with Claude Code switched on, receives session events over a local pipe that only your Windows account can write to. [SECURITY.md](SECURITY.md) lists everything the app accesses and how to report a vulnerability.
+The only network traffic is the update check: every 6 hours the app asks GitHub for the latest release, and downloads the installer when there is a newer one. No identifiers or usage data are sent, and turning off *Update automatically* in Settings stops it. Otherwise the app reads what Windows' media controls publish, captures the screen behind the island only to blur it (in memory, never saved), listens to your speakers' output only to move the equalizer bars, and, with Claude Code switched on, receives session events over a local pipe that only your Windows account can write to. The timing log holds times and states only, no titles, file names or Claude Code text, and stays on your PC. [SECURITY.md](SECURITY.md) lists everything the app accesses and how to report a vulnerability.
 
 ## How it works
 
@@ -130,6 +137,7 @@ cd island
 bun install
 bun run start        # run in development
 bun run dev          # run with the island pinned open
+bun run test         # run the tests
 bun run dist         # build the installer into dist\
 ```
 

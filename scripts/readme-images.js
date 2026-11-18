@@ -82,8 +82,11 @@ if (process.argv.includes('join')) {
   };
   const sessions = [
     { id: 'a', label: 'island', state: 'needs', needsKind: 'permission', tool: 'Bash', turnStart: now - 50000, durationMs: 0, endedAt: 0, lastEventAt: now - 3000, agentsUsed: 0, agents: [], canJump: true },
-    { id: 'b', label: 'ZeroEmit', state: 'working', needsKind: null, tool: '', turnStart: now - 91000, durationMs: 0, endedAt: 0, lastEventAt: now - 2000, agentsUsed: 2, agents: [], canJump: true },
-    { id: 'c', label: 'api', state: 'finished', needsKind: null, tool: '', turnStart: 0, durationMs: 134000, endedAt: now - 180000, lastEventAt: 0, agentsUsed: 0, agents: [], canJump: true },
+    { id: 'b', label: 'ZeroEmit', state: 'waiting', needsKind: null, tool: '', turnStart: now - 91000, durationMs: 0, endedAt: 0, lastEventAt: now - 2000, agentsUsed: 2, canJump: true, agents: [
+      { id: 'b1', label: 'Explore', type: 'Explore', state: 'running', tool: 'Grep', askTool: '', startedAt: now - 41000, endedAt: 0, lastEventAt: now - 2000 },
+      // done a while ago: folded into the count, so the page fits without scrolling
+      { id: 'b2', label: 'Plan', type: 'Plan', state: 'done', tool: 'Read', askTool: '', startedAt: now - 80000, endedAt: now - 60000, lastEventAt: now - 60000 },
+    ] },
   ];
   // Claude Code is off by default: its page and dot only in its own scenes.
   const claudeOn = scene === 'claude' || peek;
