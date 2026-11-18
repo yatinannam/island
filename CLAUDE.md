@@ -63,8 +63,8 @@ Windows 11 app that gives a Mac-style top "island": a glass notch-shaped island 
 
 ## Roadmap
 
-Done: music, glass, settings, tray, file shelf, installer, live equalizer, live activities (Claude Code), smooth swiping (0.3.0), auto-update (0.4.0), login/swipe fixes + island.log (0.4.1), subagents on the Claude Code page (0.5.0; tested with real `claude -p` runs into the dev island; not tested: a real permission prompt inside a subagent in an interactive session, real clicks on agent lines). Next agreed with Yatin: hide over fullscreen apps (re-test clicks first). Parked to discuss with Yatin: a friend's project "jingle" (opdhaker.dev/projects/jingle) as a reference. Yatin chose to skip the rest for now and plan later only if needed:
-- Track-change peek, volume/brightness indicator, hide over fullscreen apps (hiding broke clicks until the `backgroundThrottling` fix; re-test before relying on hide), timer, clipboard history, battery peek, code signing.
+Done: music, glass, settings, tray, file shelf, installer, live equalizer, live activities (Claude Code), smooth swiping (0.3.0), auto-update (0.4.0), login/swipe fixes + island.log (0.4.1), subagents on the Claude Code page (0.5.0; tested with real `claude -p` runs into the dev island; not tested: a real permission prompt inside a subagent in an interactive session, real clicks on agent lines). **Dropped (2026-11-18): hide over fullscreen apps.** Yatin wants the dropdown to work over fullscreen apps too (videos, games); do not hide the island or block the hot zone in fullscreen. Peeks still wait during fullscreen (unchanged). Parked to discuss with Yatin: a friend's project "jingle" (opdhaker.dev/projects/jingle) as a reference. Yatin chose to skip the rest for now and plan later only if needed:
+- Track-change peek, volume/brightness indicator, timer, clipboard history, battery peek, code signing.
 
 ## Known limits
 
