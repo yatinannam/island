@@ -128,23 +128,30 @@
         }
         return true;
       }
-      // The event's way along the pages: right and down are forward.
-      const way = Math.sign(Math.abs(dx) > Math.abs(dy) ? dx : dy);
+      let axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
       if (g && g.locked) {
         const settled = t - g.lockAt >= (g.lifted ? AFTER_LIFT_MS : AFTER_COMMIT_MS);
         const kick = settled && mag >= KICK_MIN && mag > g.lastMag * KICK_RATIO;
-        const turned = settled && g.lifted && g.momDir && way !== g.momDir && mag >= TURN_MIN;
+        // Turning back is judged along the swipe's own axis (right and down
+        // are forward). The momentum of a diagonal swipe, its two axes about
+        // the same size with opposite signs, can swap which one is larger
+        // from one event to the next: judged by the larger one, that read as
+        // a turn and the pages bounced back, sometimes more than once.
+        const along = g.axis === 'x' ? dx : dy;
+        const way = Math.sign(along);
+        const turned = settled && g.lifted && g.momDir && way && way !== g.momDir && Math.abs(along) >= TURN_MIN;
         g.lastT = t;
         g.lastMag = mag;
         if (!kick && !turned) { // momentum, or the rest of a swipe that already arrived
-          g.momDir = way;
+          if (way) g.momDir = way;
           return true;
         }
+        if (turned) axis = g.axis; // back along the same axis, whichever is larger in this event
         g = null;
       }
       if (!g) {
         g = {
-          axis: Math.abs(dx) > Math.abs(dy) ? 'x' : 'y', base: page, raw: pos - page * W,
+          axis, base: page, raw: pos - page * W,
           v: 0, lastT: t, locked: false, lifted: false, lockAt: 0, lastMag: 0, momDir: 0, events: 0,
         };
       }
