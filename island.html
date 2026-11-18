@@ -678,7 +678,13 @@
   // Redraws while the shape is moving or something changed, then sleeps
   // until kick() wakes it (state change, new captured frame, config).
   let still = 0;
+  let prevFrame = 0, gapReportedAt = 0; // island.log: frames that came late while drawing
   function frame(now) {
+    if (prevFrame && now - prevFrame > 250 && now - gapReportedAt > 2000) {
+      gapReportedAt = now;
+      window.island.diag(`frame gap ${Math.round(now - prevFrame)} ms (${document.visibilityState})`);
+    }
+    prevFrame = now;
     const r = islandEl.getBoundingClientRect();
     if (stepSongTint(now)) dirty = true;
     else tintAt = 0;
@@ -695,8 +701,10 @@
       requestAnimationFrame(frame);
     } else if (visible) {
       running = false;
+      prevFrame = 0;
     } else {
       running = false;
+      prevFrame = 0;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
@@ -744,6 +752,7 @@
     if (cap && cap.sourceId === info.sourceId) { buildBlur(); return; }
     stopCapture();
     const mine = cap = { sourceId: info.sourceId, stream: null, video: null };
+    const asked = performance.now();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
@@ -761,6 +770,8 @@
       video.muted = true;
       video.srcObject = stream;
       await video.play();
+      const took = performance.now() - asked;
+      if (took > 500) window.island.diag(`glass capture took ${Math.round(took)} ms`);
       mine.stream = stream;
       mine.video = video;
       const onFrame = () => {
@@ -772,6 +783,7 @@
       video.requestVideoFrameCallback(onFrame);
     } catch (e) {
       console.warn('glass capture failed', e);
+      window.island.diag(`glass capture failed after ${Math.round(performance.now() - asked)} ms: ${e && e.name}`);
       if (cap === mine) cap = null;
     }
   }
@@ -963,9 +975,13 @@
       pager.jump(openPage);
       openPage = 0;
       // Two frames so the collapsed state is committed before the transition starts.
+      // Timed for island.log: frames wait while Chromium counts the page as hidden.
+      const recvAt = Date.now(), t0 = performance.now(), vis = document.visibilityState;
       requestAnimationFrame(() => requestAnimationFrame(() => {
         body.classList.add('open');
         kick();
+        const t1 = performance.now();
+        requestAnimationFrame(() => window.island.diagOpen({ recvAt, vis, wait: t1 - t0, first: performance.now() - t1 }));
       }));
       clearInterval(progressTimer);
       progressTimer = setInterval(renderProgress, 250);
@@ -1113,8 +1129,21 @@
   let actsScrolledAt = 0, tilesScrolledAt = 0;
   $('actList').addEventListener('scroll', () => { actsScrolledAt = performance.now(); });
   $('tiles').addEventListener('scroll', () => { tilesScrolledAt = performance.now(); });
+  // The last swipes, for island.log on Ctrl+Alt+D right after a glitch:
+  // [ms, deltaX, deltaY, page], the same shape as the recordings the pager was tuned on.
+  const wheelLog = [];
+  window.island.onDiagDump(() => {
+    const since = performance.now() - 15000;
+    const recent = wheelLog.filter((w) => w[0] >= since);
+    window.island.diag(`swipes (last 15 s, ${recent.length} events): ${JSON.stringify(recent)}`);
+  });
+  addEventListener('visibilitychange', () => window.island.diag(`page ${document.visibilityState}`));
+
   addEventListener('wheel', (e) => {
     if (!body.classList.contains('open')) return;
+    const r1 = (v) => Math.round(v * 10) / 10; // touchpad deltas can be fractional at 125%
+    wheelLog.push([Math.round(e.timeStamp), r1(e.deltaX), r1(e.deltaY), page]);
+    if (wheelLog.length > 600) wheelLog.splice(0, wheelLog.length - 600);
     const sideways = Math.abs(e.deltaX) > Math.abs(e.deltaY);
     if (!pager.active(e.timeStamp)) {
       const tiles = $('tiles');

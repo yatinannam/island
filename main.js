@@ -4,7 +4,8 @@
 //          --solid  start with glass off
 // Env:     ISLAND_DEBUG=1 log open/close; ISLAND_SHOT=file.png save a capture of the page once open
 // Hotkeys: Ctrl+Alt+I pin/unpin the island, Ctrl+Alt+Q quit,
-//          Ctrl+Alt+J go to the Claude Code session that needs you.
+//          Ctrl+Alt+J go to the Claude Code session that needs you,
+//          Ctrl+Alt+D mark a glitch in island.log (with the last swipes).
 
 const {
   app, BrowserWindow, screen, globalShortcut, ipcMain, Tray, Menu,
@@ -22,6 +23,7 @@ const { Hub } = require('./activity/hub');
 const { Ctl } = require('./activity/helper');
 const claudeHooks = require('./activity/claude-hooks');
 const { Updater } = require('./updater');
+const { DiagLog } = require('./diag-log');
 
 // Expanded island shape, in DIP. Must match --w / --h / --shelf-h in island.html.
 const SHAPE_W = 380;
@@ -79,6 +81,13 @@ const shelf = new Shelf(app.getPath('userData'));
 
 const DEBUG = process.env.ISLAND_DEBUG === '1';
 const log = (...a) => { if (DEBUG) console.log('[island]', ...a); };
+
+// island.log: timings around sleep, lock and slow opens (diag-log.js).
+const diag = new DiagLog(app.getPath('userData'));
+let wokeAt = 0;             // last resume, unlock or main-process stall: opens soon after are logged
+let lastTickAt = 0;
+let openAskedAt = 0;        // when main sent the last open
+const wake = (what) => { wokeAt = Date.now(); diag.write(what); };
 
 // Live activities: Claude Code sessions reported by islandctl.exe hooks.
 // Packaged: islandctl.exe ships in resources. Development: compiled on first run.
@@ -270,6 +279,7 @@ function createWindow() {
   // A crashed island page would stay dead (and invisible) until a restart.
   win.webContents.on('render-process-gone', (_e, details) => {
     log('island page gone:', details.reason);
+    diag.write('island page gone:', details.reason, details.exitCode);
     ready = false;
     if (details.reason !== 'clean-exit') setTimeout(() => { if (!win.isDestroyed()) win.webContents.reload(); }, 1000);
   });
@@ -294,6 +304,7 @@ function openIsland(d, page = 0) {
   sendCapture(d);
   if (!win.isVisible()) win.showInactive(); // first open only
   send('open-page', page);
+  openAskedAt = Date.now();
   send('island-state', 'open');
   hub.setIslandOpen(true); // a showing peek gives way; news comes as banners while open
   refreshTheme();
@@ -420,6 +431,11 @@ function overShape(p, d) {
 let held = false;
 
 function tick() {
+  // Ticks come every 16 ms; a long gap means the main process was stopped
+  // (standby) or blocked, and the island could not open meanwhile.
+  const now = Date.now();
+  if (lastTickAt && now - lastTickAt > 1000) wake(`main tick gap ${now - lastTickAt} ms`);
+  lastTickAt = now;
   const p = screen.getCursorScreenPoint();
   // A peek pill takes the mouse while the cursor is on it (click, x), and
   // its timer waits meanwhile.
@@ -695,6 +711,25 @@ function registerShortcut(accel, fn) {
 
 ipcMain.on('debug', (_e, msg) => log('renderer:', String(msg)));
 
+// Renderer timings for island.log. An open is logged when slow, or in the
+// minutes after a wake (resume, unlock, stall), where the slow ones were seen.
+ipcMain.on('diag', (_e, m) => {
+  if (!m || typeof m !== 'object') return;
+  const ms = (v) => Math.round(Number(v)) || 0;
+  if (m.kind === 'open') {
+    const ipc = openAskedAt ? ms(m.recvAt) - openAskedAt : 0;
+    const wait = ms(m.wait), first = ms(m.first);
+    const slow = ipc >= 100 || wait >= 100 || first >= 100;
+    log('open timing: ipc', ipc, 'page', m.vis, 'class after', wait, 'first frame', first);
+    if (slow || Date.now() - wokeAt < 3 * 60 * 1000) {
+      diag.write(`open: ipc ${ipc} ms, page ${m.vis === 'hidden' ? 'hidden' : 'visible'}, `
+        + `class after ${wait} ms, first frame ${first} ms${slow ? ' (slow)' : ''}`);
+    }
+  } else if (m.kind === 'text') {
+    diag.write('page:', String(m.text).slice(0, 16384));
+  }
+});
+
 ipcMain.on('hold', (_e, on) => {
   held = !!on && isOpen;
   log('hold', held);
@@ -868,6 +903,8 @@ app.whenReady().then(async () => {
     app.setLoginItemSettings({ ...loginItem(), openAtLogin: process.argv[sww + 1] === 'on' });
   }
   upgradeLoginItem();
+  diag.write('start', app.getVersion(), app.isPackaged ? 'installed' : 'dev',
+    process.argv.includes('--login') ? 'at sign-in' : '');
   settings.load();
   shelf.load();
   theme = await readTheme();
@@ -879,10 +916,11 @@ app.whenReady().then(async () => {
   refreshClaude(); // starts the hub when Claude Code is on
   ctl.path().then((exe) => { ctlExe = exe; refreshClaude(); sendSettings(); })
     .catch((e) => log('islandctl unavailable:', e.message));
-  powerMonitor.on('lock-screen', () => { screenLocked = true; updateLocked(); });
-  powerMonitor.on('unlock-screen', () => { screenLocked = false; updateLocked(); });
-  powerMonitor.on('suspend', () => { suspended = true; updateLocked(); });
-  powerMonitor.on('resume', () => { suspended = false; updateLocked(); });
+  powerMonitor.on('lock-screen', () => { screenLocked = true; updateLocked(); diag.write('lock'); });
+  powerMonitor.on('unlock-screen', () => { screenLocked = false; updateLocked(); wake('unlock'); });
+  powerMonitor.on('suspend', () => { suspended = true; updateLocked(); diag.write('suspend'); });
+  powerMonitor.on('resume', () => { suspended = false; updateLocked(); wake('resume'); });
+  app.on('child-process-gone', (_e, d) => diag.write('child process gone:', d.type, d.reason, d.exitCode));
   setInterval(tick, TICK_MS);
   if (UPDATES) {
     // A minute in: the installer that just updated island has exited by then.
@@ -892,6 +930,11 @@ app.whenReady().then(async () => {
   }
   registerShortcut('Control+Alt+I', togglePinned);
   registerShortcut('Control+Alt+Q', () => app.quit());
+  // Right after a glitch: a mark in island.log, plus the page's last swipes.
+  registerShortcut('Control+Alt+D', () => {
+    diag.write('mark (Ctrl+Alt+D)', isOpen ? 'island open' : 'island closed');
+    send('diag-dump');
+  });
   nativeTheme.on('updated', refreshTheme);
   const displaysChanged = () => {
     sourceIds.clear();
@@ -908,4 +951,6 @@ app.on('will-quit', () => {
   media.stop();
   hub.stop();
   settings.save();
+  diag.write('quit');
+  diag.flush();
 });

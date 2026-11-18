@@ -11,6 +11,12 @@ contextBridge.exposeInMainWorld('island', {
   onArt: listen('media-art'),
   media: (cmd) => ipcRenderer.send('media-cmd', String(cmd)),
   debug: (msg) => ipcRenderer.send('debug', String(msg)),
+  // island.log (diag-log.js): open timings, page visibility, frame gaps, swipes on Ctrl+Alt+D
+  diagOpen: (t) => ipcRenderer.send('diag', {
+    kind: 'open', recvAt: Number(t.recvAt), vis: String(t.vis), wait: Number(t.wait), first: Number(t.first),
+  }),
+  diag: (text) => ipcRenderer.send('diag', { kind: 'text', text: String(text) }),
+  onDiagDump: listen('diag-dump'),
   hold: (on) => ipcRenderer.send('hold', !!on),
   shapeSize: (h) => ipcRenderer.send('shape-size', Number(h)),
   onShelf: listen('shelf'),

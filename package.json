@@ -38,6 +38,7 @@
       "settings.html",
       "settings.js",
       "updater.js",
+      "diag-log.js",
       "shelf.js",
       "icon.js",
       "tray-visibility.js",

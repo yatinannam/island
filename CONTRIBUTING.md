@@ -52,8 +52,11 @@ There is no automated UI test suite yet; changes are verified on a real Windows 
 | `ISLAND_UPDATE_URL=<url>` | Check a local fake "latest release" (`http://127.0.0.1:<port>/...` only) instead of GitHub; also enables updates in a development copy |
 | `CLAUDE_CONFIG_DIR=<folder>` | Claude Code's own setting for its config folder; island reads and writes its hooks there |
 | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>I</kbd> / <kbd>Q</kbd> / <kbd>J</kbd> | Pin the island open / quit / go to the Claude Code session that needs you (only while Claude Code is on) |
+| <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd> | Mark a glitch in `%APPDATA%\island\island.log`, with the last 15 s of swipes |
 
-Launching a second copy without flags opens the settings flyout in the running one (single-instance lock).
+Launching a second copy without flags opens the settings flyout in the running one (single-instance lock); one started with `--login` (the Start with Windows entry) does nothing.
+
+`%APPDATA%\island\island.log` (`diag-log.js`, always on, moved to `island.old.log` at 512 KB) records timings only: start, suspend/resume, lock/unlock, main-process stalls over 1 s, page hidden/visible, frame gaps over 250 ms, slow glass capture, crashed processes, and opens that were slow or came within 3 minutes of a wake. A normal open takes about `ipc 4 ms, class after 11 ms, first frame 17 ms`.
 
 ### README images
 
