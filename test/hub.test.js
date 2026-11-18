@@ -149,6 +149,7 @@ test('a subagent permission prompt: session needs you until that agent moves on'
   assert.strictEqual(s.state, 'needs');
   assert.strictEqual(s.tool, 'Bash');
   assert.strictEqual(agentsById(hub).X.state, 'needs');
+  assert.strictEqual(agentsById(hub).X.askTool, 'Bash');
   assert.deepStrictEqual(adds, [['s1', 'needs']]);
   ev(hub, 'PostToolUse', T0 + 400, { tool: 'Grep' }); // the main agent, not the one asking
   assert.strictEqual(session(hub).state, 'needs');

@@ -36,11 +36,14 @@
     return h < 24 ? `${h}h ago` : `${Math.floor(h / 24)}d ago`;
   }
 
+  const agentsText = (n) => `${n} agent${n === 1 ? '' : 's'}`;
+
   // Peek / banner text: [icon] label  status  detail
   function peekParts(p) {
+    const agents = p.agents ? ` · ${agentsText(p.agents)}` : '';
     switch (p.kind) {
-      case 'finished': return { icon: ICONS.ok, status: 'finished', detail: dur(p.durationMs) };
-      case 'failed': return { icon: ICONS.err, status: 'ended on an error', detail: dur(p.durationMs) };
+      case 'finished': return { icon: ICONS.ok, status: 'finished', detail: dur(p.durationMs) + agents };
+      case 'failed': return { icon: ICONS.err, status: 'ended on an error', detail: dur(p.durationMs) + agents };
       case 'question': return { icon: ICONS.warn, status: 'has a question', detail: '' };
       default: return { icon: ICONS.warn, status: p.tool ? `needs you · ${p.tool}` : 'needs you', detail: '' };
     }
@@ -131,12 +134,25 @@
 
   let activity = { connected: 'off', sessions: [] };
 
-  function rowParts(s) {
-    const subs = s.subagents ? ` · ${s.subagents} subagent${s.subagents === 1 ? '' : 's'} done` : '';
+  // The session row. L: its agent lines (activity-rows.js).
+  function rowParts(s, L) {
     switch (s.state) {
       case 'working':
         if (Date.now() - s.lastEventAt > IDLE_MS) return { icon: ICONS.dim, what: 'idle', when: ago(s.lastEventAt) };
-        return { icon: ICONS.spin, what: 'working' + subs, when: dur(Date.now() - s.turnStart) };
+        return {
+          icon: ICONS.spin,
+          what: 'working' + (L.running ? ` · ${agentsText(L.running)}` : ''),
+          when: dur(Date.now() - s.turnStart),
+        };
+      case 'waiting': // the main agent replied; its subagents still work
+        if (!L.running && (L.idle || Date.now() - s.lastEventAt > IDLE_MS)) {
+          return { icon: ICONS.dim, what: 'idle', when: ago(s.lastEventAt) };
+        }
+        return {
+          icon: ICONS.spin,
+          what: L.running ? `waiting on ${agentsText(L.running)}` : 'wrapping up',
+          when: dur(Date.now() - s.turnStart),
+        };
       case 'needs':
         return {
           icon: ICONS.warn,
@@ -144,16 +160,41 @@
             : s.tool ? `needs you · ${s.tool}` : 'needs you',
           when: '',
         };
-      case 'finished': return { icon: ICONS.ok, what: `finished in ${dur(s.durationMs)}${subs}`, when: ago(s.endedAt) };
+      case 'finished': {
+        const agents = s.agentsUsed ? ` · ${agentsText(s.agentsUsed)}` : '';
+        return { icon: ICONS.ok, what: `finished in ${dur(s.durationMs)}${agents}`, when: ago(s.endedAt) };
+      }
       case 'failed': return { icon: ICONS.err, what: 'ended on an error', when: ago(s.endedAt) };
       case 'stopped': return { icon: ICONS.dim, what: 'closed', when: ago(s.endedAt) };
       default: return { icon: ICONS.dim, what: 'ready', when: '' };
     }
   }
 
+  // A subagent line: [tree] icon  label  what  how long
+  function agentParts(a) {
+    const now = Date.now();
+    switch (a.show) {
+      case 'needs': return { icon: ICONS.warn, what: a.askTool ? `needs you · ${a.askTool}` : 'needs you', when: '' };
+      case 'done': return { icon: ICONS.ok, what: 'done', when: dur(a.endedAt - a.startedAt) };
+      case 'idle': return { icon: ICONS.dim, what: 'idle', when: ago(a.lastEventAt) };
+      default: return { icon: ICONS.spin, what: a.tool || 'working', when: dur(now - a.startedAt) };
+    }
+  }
+
   // Rows are kept and updated in place (rebuilding them every second would
   // drop the hover under the cursor); only a changed shape rebuilds a row.
-  const rows = new Map(); // session id -> { row, shape, html }
+  // Keys: session id; `a:<session>:<agent>` for agent lines; `m:<session>` for "+N more".
+  const rows = new Map(); // key -> { row, shape, icon }
+
+  // Agent lines and the more line: no buttons; a click goes to the session's terminal.
+  function buildSubRow(s, more) {
+    const row = document.createElement('div');
+    row.className = 'act-row sub' + (more ? ' more' : '') + (s.canJump ? ' jump' : '');
+    row.title = s.canJump ? 'Go to its terminal' : '';
+    row.innerHTML = '<span class="tree"></span><span class="i"></span><span class="name"></span><span class="what"></span><span class="when"></span>';
+    row.addEventListener('click', () => { if (s.canJump) window.island.activityJump(s.id); });
+    return row;
+  }
 
   function buildRow(s) {
     const row = document.createElement('div');
@@ -169,34 +210,69 @@
     return row;
   }
 
+  // Fill a row in place: icon, then texts (only what changed).
+  function fill(r, parts, name) {
+    if (r.icon !== parts.icon) { r.row.querySelector('.i').innerHTML = parts.icon; r.icon = parts.icon; }
+    const set = (sel, text) => { const el = r.row.querySelector(sel); if (el.textContent !== text) el.textContent = text; };
+    set('.name', name);
+    set('.what', parts.what);
+    set('.when', parts.when);
+  }
+
+  function rowFor(key, shape, build) {
+    let r = rows.get(key);
+    if (!r || r.shape !== shape) {
+      const row = build();
+      if (r) r.row.replaceWith(row);
+      r = { row, shape, icon: '' };
+      rows.set(key, r);
+    }
+    return r;
+  }
+
   function renderActivity() {
     const list = $('actList');
     const sessions = activity.sessions;
+    const now = Date.now();
     const order = [];
+    const keys = new Set();
+    let working = 0, needs = 0, agents = 0;
     for (const s of sessions) {
-      const shape = `${s.canJump}|${s.state}`;
-      let r = rows.get(s.id);
-      if (!r || r.shape !== shape) {
-        const row = buildRow(s);
-        if (r) r.row.replaceWith(row);
-        r = { row, shape, icon: '' };
-        rows.set(s.id, r);
-      }
-      const parts = rowParts(s);
-      if (r.icon !== parts.icon) { r.row.querySelector('.i').innerHTML = parts.icon; r.icon = parts.icon; }
-      const set = (sel, text) => { const el = r.row.querySelector(sel); if (el.textContent !== text) el.textContent = text; };
-      set('.name', s.label);
-      set('.what', parts.what);
-      set('.when', parts.when);
+      const L = agentLines(s.agents, now);
+      const busy = s.state === 'working' || s.state === 'waiting';
+      if (busy && now - s.lastEventAt <= IDLE_MS && !(s.state === 'waiting' && !L.running && L.idle)) working++;
+      if (s.state === 'needs') needs++;
+      agents += L.running;
+      const r = rowFor(s.id, `${s.canJump}|${s.state}`, () => buildRow(s));
+      fill(r, rowParts(s, L), s.label);
       order.push(r.row);
+      keys.add(s.id);
+      L.shown.forEach((a, i) => {
+        const key = `a:${s.id}:${a.id}`;
+        const ar = rowFor(key, `${s.canJump}`, () => buildSubRow(s, false));
+        ar.row.classList.toggle('last', i === L.shown.length - 1 && !L.hidden);
+        fill(ar, agentParts(a), a.label);
+        order.push(ar.row);
+        keys.add(key);
+      });
+      if (L.hidden) {
+        const key = `m:${s.id}`;
+        const mr = rowFor(key, `${s.canJump}`, () => buildSubRow(s, true));
+        mr.row.classList.add('last');
+        fill(mr, { icon: '', what: `+${L.hidden} more${L.folded ? ` · ${L.folded} done` : ''}`, when: '' }, '');
+        order.push(mr.row);
+        keys.add(key);
+      }
     }
-    for (const [id, r] of rows) {
-      if (!sessions.some((s) => s.id === id)) { r.row.remove(); rows.delete(id); }
+    for (const [key, r] of rows) {
+      if (!keys.has(key)) { r.row.remove(); rows.delete(key); }
     }
-    if (order.some((row, i) => list.children[i] !== row)) list.replaceChildren(...order);
-    const working = sessions.filter((s) => s.state === 'working' && Date.now() - s.lastEventAt <= IDLE_MS).length;
-    const needs = sessions.filter((s) => s.state === 'needs').length;
-    $('actSummary').textContent = [needs && `${needs} need${needs === 1 ? 's' : ''} you`, working && `${working} working`].filter(Boolean).join(' · ');
+    if (order.length !== list.children.length || order.some((row, i) => list.children[i] !== row)) list.replaceChildren(...order);
+    $('actSummary').textContent = [
+      needs && `${needs} need${needs === 1 ? 's' : ''} you`,
+      working && `${working} working`,
+      agents && agentsText(agents),
+    ].filter(Boolean).join(' · ');
     $('act').classList.toggle('act-none', !sessions.length);
     $('actEmpty').innerHTML = activity.connected === 'partial'
       ? 'Not fully connected<small>Turn Claude Code off and on in island settings</small>'

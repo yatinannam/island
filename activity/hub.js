@@ -681,7 +681,7 @@ class Hub extends EventEmitter {
         lastEventAt: s.lastEventAt,
         agentsUsed: s.agentsUsed,
         agents: [...s.agents.values()].map((a) => ({
-          id: a.id, label: a.label, type: a.type, state: a.state, tool: a.tool,
+          id: a.id, label: a.label, type: a.type, state: a.state, tool: a.tool, askTool: a.askTool,
           startedAt: a.startedAt, endedAt: a.endedAt, lastEventAt: a.lastEventAt,
         })),
         canJump: !!s.hwnd && s.state !== 'stopped',

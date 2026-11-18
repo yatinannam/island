@@ -81,9 +81,9 @@ if (process.argv.includes('join')) {
     canToggle: true, canNext: true, canPrev: true, canSeek: true,
   };
   const sessions = [
-    { id: 'a', label: 'island', state: 'needs', needsKind: 'permission', tool: 'Bash', turnStart: now - 50000, durationMs: 0, endedAt: 0, lastEventAt: now - 3000, subagents: 0, canJump: true },
-    { id: 'b', label: 'ZeroEmit', state: 'working', needsKind: null, tool: '', turnStart: now - 91000, durationMs: 0, endedAt: 0, lastEventAt: now - 2000, subagents: 2, canJump: true },
-    { id: 'c', label: 'api', state: 'finished', needsKind: null, tool: '', turnStart: 0, durationMs: 134000, endedAt: now - 180000, lastEventAt: 0, subagents: 0, canJump: true },
+    { id: 'a', label: 'island', state: 'needs', needsKind: 'permission', tool: 'Bash', turnStart: now - 50000, durationMs: 0, endedAt: 0, lastEventAt: now - 3000, agentsUsed: 0, agents: [], canJump: true },
+    { id: 'b', label: 'ZeroEmit', state: 'working', needsKind: null, tool: '', turnStart: now - 91000, durationMs: 0, endedAt: 0, lastEventAt: now - 2000, agentsUsed: 2, agents: [], canJump: true },
+    { id: 'c', label: 'api', state: 'finished', needsKind: null, tool: '', turnStart: 0, durationMs: 134000, endedAt: now - 180000, lastEventAt: 0, agentsUsed: 0, agents: [], canJump: true },
   ];
   // Claude Code is off by default: its page and dot only in its own scenes.
   const claudeOn = scene === 'claude' || peek;

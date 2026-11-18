@@ -33,6 +33,7 @@
       "paging.js",
       "eq.js",
       "activity-view.js",
+      "activity-rows.js",
       "activity/hub.js",
       "activity/helper.js",
       "activity/claude-hooks.js",
