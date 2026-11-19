@@ -79,6 +79,15 @@ const sourceIds = new Map(); // display id -> desktopCapturer source id
 const media = new MediaHelper({ exe: app.isPackaged ? path.join(process.resourcesPath, 'smtc.exe') : null });
 const shelf = new Shelf(app.getPath('userData'));
 
+// Chromium marks a window's page hidden while other windows cover it, and
+// then draws no frames: an open waited seconds for its first frame (island.log
+// showed 3 s after a lock; 5-7 s with a topmost window over the island), the
+// island "slow to drop down" that Yatin saw. island's own window must always
+// draw when asked, and it only asks while open or moving, so it never needs
+// the saving. (This also keeps Chromium from hiding the input child window,
+// the old dead-clicks cause; backgroundThrottling stays on as well.)
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+
 const DEBUG = process.env.ISLAND_DEBUG === '1';
 const log = (...a) => { if (DEBUG) console.log('[island]', ...a); };
 

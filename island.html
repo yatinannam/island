@@ -981,7 +981,15 @@
   let openPage = 0; // set by main right before an open (Activity when opened from a peek)
   window.island.onOpenPage((p) => { openPage = Number(p) || 0; });
 
+  // Each open or close bumps this. An open waits two frames before it adds
+  // `open`, and while Chromium counts the page as hidden (covered, after a
+  // lock) no frames come for seconds: a close in that time must cancel it,
+  // or `open` landed after the close and the island stayed open on screen
+  // while main had closed it (click-through, never closing).
+  let stateSeq = 0;
+
   window.island.onState((s) => {
+    const seq = ++stateSeq;
     if (s === 'open') {
       // Opens on music (or Activity from a peek); dragging a file in switches to the shelf.
       // Already there, not sliding over from the page it closed on.
@@ -991,6 +999,7 @@
       // Timed for island.log: frames wait while Chromium counts the page as hidden.
       const recvAt = Date.now(), t0 = performance.now(), vis = document.visibilityState;
       requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (seq !== stateSeq) return; // closed (or opened again) meanwhile
         body.classList.add('open');
         kick();
         const t1 = performance.now();
